@@ -1,16 +1,66 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Redeem</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>Redeem — Pixel War</title>
+</head>
 <body>
-<script>
-const p = new URLSearchParams(location.search);
-const pack = Math.max(1, Math.min(5, Number(p.get('pack')||1)));
-const key = `redeemed-pack-${pack}`;
-if (!localStorage.getItem(key)) {
-const cur = Number(localStorage.getItem('credits')||0);
-localStorage.setItem('credits', String(cur + pack));
-localStorage.setItem(key, 'true');
-}
-location.href = 'index.html';
-</script>
-</body></html>
+  <p>Ajout de crédits en cours…</p>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <script>
+    // === 1️⃣ Configuration Firebase ===
+   const firebaseConfig = {
+
+  apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
+
+  authDomain: "shoudinpixelwar.firebaseapp.com",
+
+  databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
+
+  projectId: "shoudinpixelwar",
+
+  storageBucket: "shoudinpixelwar.firebasestorage.app",
+
+  messagingSenderId: "896929635521",
+
+  appId: "1:896929635521:web:357f7b8a29cb5045684840",
+
+  measurementId: "G-FR7NC03RCY"
+
+};
+
+
+    // === 2️⃣ Initialisation ===
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db   = firebase.database();
+
+    // === 3️⃣ Lecture du paramètre ?pack=N dans l’URL ===
+    const params = new URLSearchParams(location.search);
+    const pack = Math.max(1, Math.min(5, Number(params.get('pack') || 1)));
+
+    // === 4️⃣ Connexion anonyme puis ajout des crédits ===
+    auth.signInAnonymously()
+      .then(async () => {
+        const uid = auth.currentUser.uid;
+        console.log("Redeem pour l’utilisateur :", uid, "pack:", pack);
+
+        // Ajoute 'pack' crédits dans /credits/<uid>
+        const ref = db.ref('credits/' + uid);
+        await ref.transaction(cur => (cur || 0) + pack);
+
+        // Redirection vers la mosaïque
+        location.href = 'index.html';
+      })
+      .catch(err => {
+        console.error("Erreur Firebase :", err);
+        alert("Erreur lors de l’ajout de crédits : " + err.message);
+      });
+  </script>
+</body>
+</html>
