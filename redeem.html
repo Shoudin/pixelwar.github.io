@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Redeem</title></head>
+<body>
+<script>
+const p = new URLSearchParams(location.search);
+const pack = Math.max(1, Math.min(5, Number(p.get('pack')||1)));
+const key = `redeemed-pack-${pack}`;
+if (!localStorage.getItem(key)) {
+const cur = Number(localStorage.getItem('credits')||0);
+localStorage.setItem('credits', String(cur + pack));
+localStorage.setItem(key, 'true');
+}
+location.href = 'index.html';
+</script>
+</body></html>

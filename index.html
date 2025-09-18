@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Pixel War — Démo</title>
+<link rel="stylesheet" href="style.css">
+<style>
+body { font-family: sans-serif; margin: 16px; }
+#board { image-rendering: pixelated; border: 1px solid #333; }
+.palette { display:flex; gap:8px; margin:12px 0; }
+.sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
+.ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<div class="ui">
+<div>Crédits: <span id="credits">0</span></div>
+</div>
+<canvas id="board" width="1000" height="1000"></canvas>
+<div class="palette" id="palette"></div>
+<script src="app.js"></script>
+</body>
+</html>
