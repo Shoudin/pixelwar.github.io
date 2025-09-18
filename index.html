@@ -1,23 +1,154 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8" />
-<title>Pixel War — Démo</title>
-<link rel="stylesheet" href="style.css">
-<style>
-body { font-family: sans-serif; margin: 16px; }
-#board { image-rendering: pixelated; border: 1px solid #333; }
-.palette { display:flex; gap:8px; margin:12px 0; }
-.sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
-.ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixel War — Realtime</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    #board { image-rendering: pixelated; border: 1px solid #333; touch-action: manipulation; }
+    .palette { display:flex; gap:8px; margin:12px 0; flex-wrap: wrap; }
+    .sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
+    .ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; flex-wrap: wrap; }
+    button { cursor:pointer; }
+  </style>
 </head>
 <body>
-<div class="ui">
-<div>Crédits: <span id="credits">0</span></div>
-</div>
-<canvas id="board" width="1000" height="1000"></canvas>
-<div class="palette" id="palette"></div>
-<script src="app.js"></script>
+  <h1>Pixel War — Realtime</h1>
+  <div class="ui">
+    <div>Crédits: <span id="credits">0</span></div>
+    <button id="resetBoard">Réinitialiser mosaïque (admin local)</button>
+  </div>
+  <canvas id="board" width="1000" height="1000"></canvas>
+  <div class="palette" id="palette"></div>
+  <p>Scanne un pack (ex: <code>redeem.html?pack=3</code>) pour gagner des crédits. Toutes les machines voient la même mosaïque.</p>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <script>
+  // === 1) Mets ta config ici (copie depuis Firebase Console → Project settings → Web app) ===
+  const firebaseConfig = {
+    apiKey: "PASTE_ME",
+    authDomain: "PASTE_ME",
+    databaseURL: "PASTE_ME",   // important pour Realtime DB
+    projectId: "PASTE_ME",
+    storageBucket: "PASTE_ME",
+    messagingSenderId: "PASTE_ME",
+    appId: "PASTE_ME"
+  };
+  // === 2) Init Firebase ===
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.database();
+
+  // === 3) Paramètres mosaïque ===
+  const W = 100, H = 100, PIX = 10;
+  const colors = ['#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5','#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800'];
+  let selected = 2;
+
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const creditsEl = document.getElementById('credits');
+  const paletteEl = document.getElementById('palette');
+
+  // Palette (client)
+  colors.forEach((c,i)=>{
+    const sw = document.createElement('div');
+    sw.className = 'sw'; sw.style.background = c; sw.title = c;
+    sw.onclick = ()=>{ selected = i; };
+    paletteEl.appendChild(sw);
+  });
+
+  // === 4) Auth anonyme ===
+  let uid = null;
+  auth.signInAnonymously().catch(console.error);
+  auth.onAuthStateChanged(user => {
+    if (!user) return;
+    uid = user.uid;
+    startApp();
+  });
+
+  // === 5) App après login ===
+  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // buffer local
+  function drawCell(x,y) {
+    ctx.fillStyle = colors[grid[y][x]];
+    ctx.fillRect(x*PIX, y*PIX, PIX, PIX);
+  }
+  function fullDraw(){
+    for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y);
+  }
+
+  function startApp(){
+    // 5a) Charger l'état initial (option simple : ne rien pré-créer, juste écouter)
+    // On écoute les changements par cellule : "pixels/x_y" => { color: number }
+    const pixelsRef = db.ref('pixels');
+
+    // 5b) Au premier affichage, on peut juste dessiner en blanc (déjà fait) puis appliquer les updates existants
+    pixelsRef.once('value').then(snap => {
+      const val = snap.val() || {};
+      for (const key in val) {
+        const [x,y] = key.split('_').map(Number);
+        grid[y][x] = Number(val[key].color) || 1;
+      }
+      fullDraw();
+    });
+
+    // 5c) Écoute en temps réel des modifications
+    pixelsRef.on('child_added', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      const color = Number(snap.val().color) || 1;
+      grid[y][x] = color; drawCell(x,y);
+    });
+    pixelsRef.on('child_changed', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      const color = Number(snap.val().color) || 1;
+      grid[y][x] = color; drawCell(x,y);
+    });
+
+    // 5d) Afficher les crédits (écoute en temps réel)
+    const creditsRef = db.ref('credits/'+uid);
+    creditsRef.on('value', s => {
+      const c = s.val() || 0;
+      creditsEl.textContent = c;
+    });
+
+    // 5e) Clic = transaction: si crédits > 0 → décrémente et pose pixel
+    canvas.addEventListener('click', async (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left)/PIX);
+      const y = Math.floor((e.clientY - rect.top)/PIX);
+      if (x<0||x>=W||y<0||y>=H) return;
+
+      // décrémente crédits atomiquement
+      const myCreditsRef = db.ref('credits/'+uid);
+      try {
+        const res = await myCreditsRef.transaction(cur => {
+          if (cur === null) cur = 0;
+          if (cur <= 0) return; // annule la transaction
+          return cur - 1;
+        });
+        if (!res.committed) {
+          alert('Pas assez de crédits. Scanne un pack.');
+          return;
+        }
+        // pose le pixel
+        const cellRef = db.ref(`pixels/${x}_${y}`);
+        await cellRef.set({ color: selected });
+        // le dessin se mettra à jour via on('child_changed')
+      } catch (err) { console.error(err); }
+    });
+
+    // 5f) Réinitialiser (local admin) — supprime toutes les cellules
+    document.getElementById('resetBoard').onclick = async ()=>{
+      if (!confirm('Effacer toute la mosaïque (pour tous) ?')) return;
+      await db.ref('pixels').remove();
+      grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+      fullDraw();
+    };
+  }
+  </script>
 </body>
 </html>
