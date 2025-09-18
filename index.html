@@ -30,15 +30,26 @@
 
   <script>
   // === 1) Mets ta config ici (copie depuis Firebase Console → Project settings → Web app) ===
-  const firebaseConfig = {
-    apiKey: "PASTE_ME",
-    authDomain: "PASTE_ME",
-    databaseURL: "PASTE_ME",   // important pour Realtime DB
-    projectId: "PASTE_ME",
-    storageBucket: "PASTE_ME",
-    messagingSenderId: "PASTE_ME",
-    appId: "PASTE_ME"
-  };
+ const firebaseConfig = {
+
+  apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
+
+  authDomain: "shoudinpixelwar.firebaseapp.com",
+
+  databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
+
+  projectId: "shoudinpixelwar",
+
+  storageBucket: "shoudinpixelwar.firebasestorage.app",
+
+  messagingSenderId: "896929635521",
+
+  appId: "1:896929635521:web:357f7b8a29cb5045684840",
+
+  measurementId: "G-FR7NC03RCY"
+
+};
+
   // === 2) Init Firebase ===
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
@@ -152,3 +163,4 @@
   </script>
 </body>
 </html>
+
