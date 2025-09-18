@@ -1,36 +1,36 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pixel War — Illimité + Reset 48h</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 16px; }
-#board { image-rendering: pixelated; border: 1px solid #333; touch-action: manipulation; }
-.palette { display:flex; gap:8px; margin:12px 0; flex-wrap: wrap; }
-.sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
-.ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; flex-wrap: wrap; }
-.dim { opacity: .7 }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixel War — Illimité + Reset 48h + Archive 1 min</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    #board { image-rendering: pixelated; border: 1px solid #333; touch-action: manipulation; }
+    .palette { display:flex; gap:8px; margin:12px 0; flex-wrap: wrap; }
+    .sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
+    .ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; flex-wrap: wrap; }
+    .dim { opacity: .7 }
+  </style>
 </head>
 <body>
-<h1>Pixel War — Illimité</h1>
-<div class="ui">
-<div>Prochain reset : <span id="countdown" class="dim">chargement…</span></div>
-</div>
-<canvas id="board" width="1000" height="1000"></canvas>
-<div class="palette" id="palette"></div>
+  <h1>Pixel War — Illimité</h1>
+  <div class="ui">
+    <div>Prochain reset : <span id="countdown" class="dim">chargement…</span></div>
+    <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
+  </div>
+  <canvas id="board" width="1000" height="1000"></canvas>
+  <div class="palette" id="palette"></div>
 
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
-<!-- Firebase SDKs -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-
-
-<script>
-// 1) Config Firebase
-const firebaseConfig = {
+  <script>
+  // === 1) Config Firebase (remplace PASTE_ME par ta config) ===
+  const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -52,134 +52,194 @@ const firebaseConfig = {
 
 
 
+  // === 2) Init Firebase ===
+  firebase.initializeApp(firebaseConfig);
+  const auth     = firebase.auth();
+  const db       = firebase.database();
+  const storage  = firebase.storage();
 
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.database();
+  // === 3) Paramètres mosaïque ===
+  const W = 100, H = 100, PIX = 10;
+  const colors = ['#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5','#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800'];
+  let selected = 2;
 
+  const canvas       = document.getElementById('board');
+  const ctx          = canvas.getContext('2d');
+  const paletteEl    = document.getElementById('palette');
+  const countdownEl  = document.getElementById('countdown');
+  const onlineEl     = document.getElementById('onlineCount');
 
-// 2) Paramètres mosaïque
-const W = 100, H = 100, PIX = 10;
-const colors = ['#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5','#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800'];
-let selected = 2;
+  // Palette
+  colors.forEach((c,i)=>{
+    const sw = document.createElement('div');
+    sw.className = 'sw'; sw.style.background = c; sw.title = c;
+    sw.onclick = ()=>{ selected = i; };
+    paletteEl.appendChild(sw);
+  });
 
+  // Buffer + dessin
+  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+  function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
+  function fullDraw(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
+  fullDraw();
 
-const canvas = document.getElementById('board');
-const ctx = canvas.getContext('2d');
-const paletteEl = document.getElementById('palette');
-const countdownEl = document.getElementById('countdown');
+  // Sécurité: ne JAMAIS faire "|| 1" sur un nombre (ça casse le noir = 0)
+  function safeColor(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 1;
+  }
 
+  // === 4) Helpers Storage (snapshots PNG) ===
+  function formatParisFilename(prefix = "snapshot", ext = "png") {
+    const fmt = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const parts = fmt.formatToParts(new Date());
+    const get = t => parts.find(p => p.type===t)?.value || '';
+    const stamp = `${get('year')}-${get('month')}-${get('day')}_${get('hour')}-${get('minute')}-${get('second')}`;
+    return `${prefix}_${stamp}.${ext}`;
+  }
+  function canvasToBlobPNG(cnv){ return new Promise(res => cnv.toBlob(b => res(b), 'image/png')); }
+  async function uploadSnapshot(folder, filename) {
+    await new Promise(r => requestAnimationFrame(r)); // laisse le temps de peindre
+    const blob = await canvasToBlobPNG(canvas);
+    const path = `${folder}/${filename}`;
+    const ref = storage.ref().child(path);
+    await ref.put(blob, { contentType: 'image/png' });
+    const url = await ref.getDownloadURL();
+    console.log('Snapshot uploadé →', path, url);
+    return { path, url };
+  }
 
-// Palette
-colors.forEach((c,i)=>{
-const sw = document.createElement('div');
-sw.className = 'sw'; sw.style.background = c; sw.title = c;
-sw.onclick = ()=>{ selected = i; };
-paletteEl.appendChild(sw);
-});
+  // === 5) Reset & archive coordination ===
+  const PERIOD_RESET   = 48*60*60*1000;  // 48h
+  const PERIOD_ARCHIVE = 60*1000;        // 1 minute
+  const nextResetRef   = db.ref('config/nextResetAt');
+  const lastResetRef   = db.ref('config/lastResetAt');
+  const nextArchRef    = db.ref('config/nextArchiveAt');
+  const lastArchRef    = db.ref('config/lastArchiveAt');
 
+  function updateCountdown(ts){
+    if (!ts) { countdownEl.textContent = '—'; return; }
+    const left = ts - Date.now();
+    if (left <= 0) { countdownEl.textContent = 'reset imminent…'; return; }
+    const h = Math.floor(left/3_600_000);
+    const m = Math.floor((left%3_600_000)/60_000);
+    const s = Math.floor((left%60_000)/1000);
+    countdownEl.textContent = `${h}h ${m}m ${s}s`;
+  }
+  nextResetRef.on('value', s => updateCountdown(s.val()));
 
-// Buffer local + dessin
-let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
-function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
-function fullDraw(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
-fullDraw();
+  async function tryReset(){
+    const now = Date.now();
+    let commit = false, newNext = null;
+    const res = await nextResetRef.transaction(cur => {
+      if (cur === null) { newNext = now + PERIOD_RESET; commit = true; return newNext; }
+      if (now >= cur)   { newNext = now + PERIOD_RESET; commit = true; return newNext; }
+      return;
+    });
+    if (res.committed && commit) {
+      try {
+        fullDraw();
+        const fname = formatParisFilename('reset', 'png');
+        await uploadSnapshot('resets', fname);
+      } catch(e) { console.warn('Snapshot reset échoué (on reset quand même):', e); }
+      await db.ref('pixels').remove();
+      await lastResetRef.set(now);
+      grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+      fullDraw();
+    }
+  }
 
-// 3) Auth anonyme
-auth.signInAnonymously().catch(console.error);
-auth.onAuthStateChanged(async user => {
-if (!user) return;
-const pixelsRef = db.ref('pixels');
+  async function tryArchive(){
+    const now = Date.now();
+    let commit = false, newNext = null;
+    const res = await nextArchRef.transaction(cur => {
+      if (cur === null) { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
+      if (now >= cur)   { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
+      return;
+    });
+    if (res.committed && commit) {
+      try {
+        fullDraw();
+        const fname = formatParisFilename('archive', 'png');
+        await uploadSnapshot('archive', fname);
+        await lastArchRef.set(now);
+        console.log('Archive OK:', fname);
+      } catch(e) { console.warn('Archive échouée:', e); }
+    }
+  }
 
+  // === 6) Présence (compteur en direct) ===
+  const infoConnectedRef = firebase.database().ref('.info/connected');
+  const presenceRootRef  = firebase.database().ref('presence');
 
-// 3a) Charger et écouter les pixels
-pixelsRef.once('value').then(snap => {
-const val = snap.val() || {};
-for (const key in val) {
-const [x,y] = key.split('_').map(Number);
-const color = Number(val[key].color) || 1;
-grid[y][x] = color;
-}
-fullDraw();
-});
-pixelsRef.on('child_added', snap => {
-const [x,y] = snap.key.split('_').map(Number);
-const color = Number(snap.val().color) || 1;
-grid[y][x] = color; drawCell(x,y);
-});
-pixelsRef.on('child_changed', snap => {
-const [x,y] = snap.key.split('_').map(Number);
-const color = Number(snap.val().color) || 1;
-grid[y][x] = color; drawCell(x,y);
-});
+  // === 7) Auth anonyme & live sync ===
+  auth.signInAnonymously().catch(console.error);
+  auth.onAuthStateChanged(user => {
+    if (!user) return;
+    const uid = user.uid;
 
-// 3b) Clic = poser pixel (illimité, pas de crédits)
-canvas.addEventListener('click', async (e)=>{
-const rect = canvas.getBoundingClientRect();
-const x = Math.floor((e.clientX - rect.left)/PIX);
-const y = Math.floor((e.clientY - rect.top)/PIX);
-if (x<0||x>=W||y<0||y>=H) return;
-try {
-await db.ref(`pixels/${x}_${y}`).set({ color: selected });
-} catch (err) { console.error('write pixel error', err); }
-});
+    // 7a) Marquer la présence + compteur
+    const myPresenceRef = presenceRootRef.child(uid);
+    infoConnectedRef.on('value', snap => {
+      if (snap.val() === true) {
+        myPresenceRef.onDisconnect().remove().catch(()=>{});
+        myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+      }
+    });
+    presenceRootRef.on('value', s => {
+      const val = s.val() || {};
+      const count = Object.keys(val).length;
+      onlineEl.textContent = String(count);
+      onlineEl.classList.remove('dim');
+    });
 
+    // 7b) Pixels live
+    const pixelsRef = db.ref('pixels');
 
-// 4) Reset automatique toutes les 48h
-const PERIOD = 48*60*60*1000; // 48 heures en ms
-const nextRef = db.ref('config/nextResetAt');
-const lastRef = db.ref('config/lastResetAt');
+    pixelsRef.once('value').then(snap => {
+      const val = snap.val() || {};
+      for (const key in val) {
+        const [x,y] = key.split('_').map(Number);
+        grid[y][x] = safeColor(val[key].color);
+      }
+      fullDraw();
+    });
 
+    pixelsRef.on('child_added', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      grid[y][x] = safeColor(snap.val().color);
+      drawCell(x,y);
+    });
+    pixelsRef.on('child_changed', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      grid[y][x] = safeColor(snap.val().color);
+      drawCell(x,y);
+    });
 
-// Afficher un compte à rebours
-function updateCountdown(ts){
-if (!ts) { countdownEl.textContent = '—'; return; }
-const left = ts - Date.now();
-if (left <= 0) { countdownEl.textContent = 'reset en cours…'; return; }
-const h = Math.floor(left/3_600_000);
-const m = Math.floor((left%3_600_000)/60_000);
-const s = Math.floor((left%60_000)/1000);
-countdownEl.textContent = `${h}h ${m}m ${s}s`;
-}
+    // 7c) Peinture illimitée
+    canvas.addEventListener('click', async (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left)/PIX);
+      const y = Math.floor((e.clientY - rect.top)/PIX);
+      if (x<0||x>=W||y<0||y>=H) return;
+      try {
+        await db.ref(`pixels/${x}_${y}`).set({ color: selected });
+      } catch (err) { console.error('write pixel error', err); }
+    });
 
-
-nextRef.on('value', s => updateCountdown(s.val()));
-
-
-// Tente un reset si l'heure est passée : on utilise une transaction pour qu'un seul client gagne la course
-async function tryReset(){
-const now = Date.now();
-let commit = false; let newNext = null;
-const res = await nextRef.transaction(cur => {
-if (cur === null) { // première initialisation
-newNext = now + PERIOD; commit = true; return newNext;
-}
-if (now >= cur) { // échéance atteinte → programme le prochain
-newNext = now + PERIOD; commit = true; return newNext;
-}
-return; // pas de changement
-});
-if (res.committed && commit) {
-// On est le gagnant : efface la grille puis note l'heure de reset
-await db.ref('pixels').remove();
-await lastRef.set(now);
-// redessine localement
-grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
-fullDraw();
-}
-}
-
-
-// Au démarrage puis toutes les 60s, on vérifie
-tryReset();
-setInterval(tryReset, 60*1000);
-// bonus : mettre à jour le compte à rebours chaque seconde
-setInterval(async ()=>{
-const snap = await nextRef.get();
-updateCountdown(snap.val());
-}, 1000);
-});
-</script>
+    // 7d) Tickers
+    tryReset();                         // init (programmera la première échéance si absente)
+    setInterval(tryReset,   60*1000);   // check reset chaque minute
+    setInterval(tryArchive, 10*1000);   // check archive toutes les 10s (fenêtre 60s)
+    setInterval(async ()=>{             // countdown écran
+      const snap = await nextResetRef.get();
+      updateCountdown(snap.val());
+    }, 1000);
+  });
+  </script>
 </body>
 </html>
-
