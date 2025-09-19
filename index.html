@@ -1,67 +1,99 @@
 <!doctype html>
-<html>
+<html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <!-- On évite le pinch-zoom de la PAGE ; on zoome le canvas via les boutons -->
+  <!-- On stabilise l'UI mobile : on évite le pinch-zoom de la PAGE ; on zoome le canvas via les boutons -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante + Grille + Coordonnées</title>
+  <title>Pixel War — 300×300 (palette bas, Firebase, reset, archives)</title>
   <style>
-    :root { --sidebar-w: 92px; }
+    :root {
+      --bar-h: 72px;      /* hauteur de la barre palette */
+      --bar-pad: 10px;    /* padding interne */
+      --sw: 28px;         /* taille d’un swatch */
+      --gap: 8px;         /* espace entre swatches */
+    }
+    * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 8px 0; font-size: 18px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
-    /* Scène (le canvas) */
-    #stageArea { margin-left: calc(var(--sidebar-w) + 16px); }
+    /* Zone scène (canvas) */
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette flottante verticale — fixée ; hauteur contrôlée par JS
-       On ne met PAS bottom/max-height ici : JS calcule top + la zone scroll interne */
-    #paletteDock {
+    /* Marge en bas pour ne pas cacher le canvas sous la barre palette */
+    .bottomSpacer { height: calc(var(--bar-h) + 20px); }
+
+    /* Palette horizontale fixée en bas, centrée */
+    #paletteBar {
       position: fixed;
-      left: calc(16px + env(safe-area-inset-left));
-      /* top dynamique en JS pour ne pas chevaucher l'en-tête */
-      width: var(--sidebar-w);
-      padding: 10px 8px;
-      border: 1px solid #333; border-radius: 12px; background: #fff;
-      box-shadow: 0 6px 18px rgba(0,0,0,.12);
-      display: flex; flex-direction: column; gap: 10px; z-index: 10;
-      /* pas d'overflow ici : c'est la zone des couleurs qui scrolle */
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 8px;
+      height: var(--bar-h);
+      max-width: min(100vw - 16px, 1100px);
+      padding: var(--bar-pad);
+      border: 1px solid #333;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 6px 18px rgba(0,0,0,.14);
+      display: grid;
+      grid-template-columns: auto auto; /* rail + boutons */
+      gap: 10px;
+      align-items: center;
+      z-index: 10;
+      overflow: hidden;
     }
-    #paletteDock h3 {
-      margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444;
+    /* Rail scrollable horizontal de swatches */
+    #paletteRail {
+      display: inline-flex;
+      gap: var(--gap);
+      align-items: center;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      max-width: 100%;
     }
-    /* Zone scrollable des couleurs (hauteur calculée par JS) */
-    #paletteScroll { overflow: auto; }
-    .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
-    .swRow { display:flex; gap:6px; flex-wrap: wrap; }
+    #paletteRail::-webkit-scrollbar { height: 8px; }
+    #paletteRail::-webkit-scrollbar-thumb { background: #bbb; border-radius: 8px; }
+    #paletteRail::-webkit-scrollbar-track { background: #eee; border-radius: 8px; }
+
+    .sw {
+      width: var(--sw);
+      height: var(--sw);
+      border: 1px solid #000;
+      border-radius: 6px;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
     .activeSw { outline: 2px solid #000; outline-offset: 2px; }
 
-    /* Boutons + / − sous la palette (pleine largeur) */
+    /* Boutons + / − dans la barre (sans pourcentage ici) */
     .dockZoom { display:flex; gap:8px; }
     .dockZoom button {
-      flex:1 1 0; height: 34px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
-      font-size: 16px; line-height: 1;
+      width: 40px; height: 34px;
+      border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
+      font-size: 18px; line-height: 1;
     }
 
-    /* Contrôles de zoom en haut (on garde aussi) */
+    /* Contrôles de zoom en haut (avec %), optionnels */
     .zoomControls { display:flex; gap:8px; align-items:center; }
     .zoomControls button { cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
 
     .toggle { display:flex; gap:6px; align-items:center; }
 
-    @media (max-width: 640px) {
-      :root { --sidebar-w: 76px; }
-      .sw { width:24px; height:24px; }
-      #stageArea { margin-left: calc(var(--sidebar-w) + 12px); }
-      .dockZoom button { height: 32px; }
+    @media (max-width: 480px) {
+      :root { --bar-h: 64px; --sw: 24px; --gap: 6px; }
+      body { margin: 12px; }
+      .dockZoom button { width: 36px; height: 32px; }
     }
   </style>
 </head>
 <body>
-  <h1>Pixel War — Illimité</h1>
+  <h1>Pixel War — 300×300</h1>
   <div class="ui">
     <div>Prochain reset : <span id="countdown" class="dim">chargement…</span></div>
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
@@ -79,26 +111,20 @@
     </label>
   </div>
 
-  <!-- Palette flottante -->
-  <aside id="paletteDock" aria-label="Palette de couleurs">
-    <h3>Palette</h3>
-    <!-- Zone scrollable des couleurs -->
-    <div id="paletteScroll">
-      <div class="swRow" id="palette"></div>
-    </div>
-    <!-- Boutons + / − SOUS les couleurs -->
+  <div id="stageWrap">
+    <canvas id="board"></canvas>
+  </div>
+
+  <div class="bottomSpacer" aria-hidden="true"></div>
+
+  <!-- Palette horizontale, centrée en bas, avec boutons + / − -->
+  <aside id="paletteBar" aria-label="Palette de couleurs">
+    <div id="paletteRail"></div>
     <div class="dockZoom">
       <button id="dockZOut" title="Zoom -">−</button>
       <button id="dockZIn"  title="Zoom +">+</button>
     </div>
   </aside>
-
-  <!-- Zone de scène zoomable -->
-  <div id="stageArea">
-    <div id="stageWrap">
-      <canvas id="board" width="1000" height="1000"></canvas>
-    </div>
-  </div>
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -130,44 +156,45 @@
 
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
-  const db = firebase.database();
+  const db   = firebase.database();
   const storage = firebase.storage();
 
-  // === Paramètres mosaïque & palette ===
-  const W = 100, H = 100, PIX = 10;
-  const colors = [
-    '#000000','#FFFFFF','#E0E0E0','#9E9E9E','#616161',
-    '#E91E63','#9C27B0','#3F51B5','#03A9F4','#009688',
-    '#8BC34A','#FFEB3B','#FF9800','#AD1457','#6A1B9A',
-    '#283593','#0288D1','#00695C','#558B2F','#FBC02D',
-    '#EF6C00','#D84315','#795548'
-  ];
-  let selected = 2;
+  // === Paramètres mosaïque ===
+  const W = 300, H = 300, PIX = 10;
+  const canvas = document.getElementById('board');
+  canvas.width  = W * PIX;
+  canvas.height = H * PIX;
+  const ctx = canvas.getContext('2d');
 
-  const canvas   = document.getElementById('board');
-  const ctx      = canvas.getContext('2d');
-  const paletteEl= document.getElementById('palette');
-  const paletteDock = document.getElementById('paletteDock');
-  const paletteScroll = document.getElementById('paletteScroll');
+  // === Palette (ordre demandé + rouge franc) ===
+  const colors = [
+    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
+    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
+    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
+    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
+    '#E0E0E0','#9E9E9E','#616161','#FF0000' // Rouge pur ajouté
+  ];
+  let selected = 0;
+
+  // === Références DOM ===
+  const rail        = document.getElementById('paletteRail');
   const countdownEl = document.getElementById('countdown');
-  const onlineEl = document.getElementById('onlineCount');
-  const clickEl  = document.getElementById('clickCount');
-  const coordsEl = document.getElementById('coords');
-  const stageWrap= document.getElementById('stageWrap');
-  const stageArea= document.getElementById('stageArea');
-  const zLevelEl = document.getElementById('zLevel');
+  const onlineEl    = document.getElementById('onlineCount');
+  const clickEl     = document.getElementById('clickCount');
+  const coordsEl    = document.getElementById('coords');
+  const zLevelEl    = document.getElementById('zLevel');
   const showGridChk = document.getElementById('showGridChk');
 
-  // === Dessin & grille ===
-  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+  // === Grille mémoire + dessin ===
+  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // 1 = blanc
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
 
+  // Grille overlay
   function drawGridOverlay() {
     const thin = 'rgba(0,0,0,0.15)';
     const bold = 'rgba(0,0,0,0.35)';
-    ctx.save();
-    ctx.lineWidth = 1;
+    ctx.save(); ctx.lineWidth = 1;
 
     // Verticales
     ctx.beginPath(); ctx.strokeStyle = thin;
@@ -200,9 +227,15 @@
     fullPixels();
     if (showGridChk.checked) drawGridOverlay();
   }
-  redrawAll();
+  // Préférence grille (memo)
+  const gridPrefKey = 'pw-show-grid';
+  showGridChk.checked = localStorage.getItem(gridPrefKey) === '1';
+  showGridChk.addEventListener('change', ()=>{
+    localStorage.setItem(gridPrefKey, showGridChk.checked ? '1' : '0');
+    redrawAll();
+  });
 
-  // === Curseur coloré ===
+  // === Curseur coloré (SVG data URL) ===
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -213,55 +246,38 @@
       `</svg>`;
     return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
   }
+  function updateCursor(){ canvas.style.cursor = makeColorCursor(colors[selected]); }
+  canvas.addEventListener('mouseenter', updateCursor);
+  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
 
-  // === Palette UI + curseur initial ===
+  // === Palette (barre du bas) ===
   function renderPalette() {
-    paletteEl.innerHTML = '';
+    rail.innerHTML = '';
     colors.forEach((c,i)=>{
       const sw = document.createElement('div');
       sw.className = 'sw'; sw.style.background = c; sw.title = c;
-      if (i === selected) sw.classList.add('activeSw');
+      if (i===selected) sw.classList.add('activeSw');
       sw.onclick = ()=>{
         selected = i;
-        updateActiveSw();
-        canvas.style.cursor = makeColorCursor(colors[selected]);
+        [...rail.children].forEach(el => el.classList.remove('activeSw'));
+        sw.classList.add('activeSw');
+        updateCursor();
       };
-      paletteEl.appendChild(sw);
+      rail.appendChild(sw);
     });
   }
-  function updateActiveSw() {
-    [...paletteEl.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx === selected));
-  }
-  renderPalette();
-  canvas.style.cursor = makeColorCursor(colors[selected]);
-  canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor = makeColorCursor(colors[selected]); });
-  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
+  renderPalette(); updateCursor();
 
-  // === Shift + molette = changer de couleur (desktop) ===
-  canvas.addEventListener('wheel', e => {
-    if (e.shiftKey) {
-      e.preventDefault();
-      if (e.deltaY > 0) selected = (selected + 1) % colors.length;
-      else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
-      updateActiveSw();
-      canvas.style.cursor = makeColorCursor(colors[selected]);
-    }
-  }, { passive: false });
-
-  // === Zoom (palette inchangée) ===
+  // === Zoom (le canvas zoome, pas la page) ===
   let zoom = 1;
-  function applyZoom(){ stageWrap.style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
+  function applyZoom(){ document.getElementById('stageWrap').style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
   function zoomIn(){  zoom = Math.min(4, zoom * 1.25); applyZoom(); }
   function zoomOut(){ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); }
-
   document.getElementById('zIn').onclick    = zoomIn;
   document.getElementById('zOut').onclick   = zoomOut;
   document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); };
-
-  // Boutons + / − dans la PALETTE (sous les couleurs)
   document.getElementById('dockZIn').onclick  = zoomIn;
   document.getElementById('dockZOut').onclick = zoomOut;
-
   applyZoom();
 
   // === Coordonnées (x,y) — tient compte du zoom ===
@@ -275,47 +291,8 @@
   }
   canvas.addEventListener('mousemove', (e)=>{
     const {x,y} = screenToGrid(e.clientX, e.clientY);
-    if (x>=0 && x<W && y>=0 && y<H) {
-      coordsEl.textContent = `(${x}, ${y})`;
-      coordsEl.classList.remove('dim');
-    } else {
-      coordsEl.textContent = '—';
-    }
+    coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
   });
-
-  // === Layout de la palette : ne pas monter au-dessus de la fresque et limiter la hauteur ===
-  function layoutPalette() {
-    const uiRect = document.querySelector('.ui').getBoundingClientRect();
-    const stageRect = stageArea.getBoundingClientRect(); // bord supérieur de la fresque
-    const safeTop = 16;   // marge supérieure mini
-    const safeBot = 16;   // marge inférieure mini
-
-    // Top = au moins sous l'UI, et pas moins que 16px
-    const topPx = Math.max(uiRect.bottom + 8, safeTop);
-    paletteDock.style.top = `${Math.round(topPx)}px`;
-
-    // Hauteur dispo à l'écran sous ce top (sans aller jusqu'au bord bas)
-    const viewportH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    const availableH = Math.max(120, viewportH - topPx - safeBot); // minimum 120px au cas où
-
-    // Calculer la place que prennent: titre + padding + boutons
-    const dockStyles = getComputedStyle(paletteDock);
-    const padV = parseFloat(dockStyles.paddingTop) + parseFloat(dockStyles.paddingBottom);
-    const titleH = paletteDock.querySelector('h3').getBoundingClientRect().height;
-    const buttonsH = paletteDock.querySelector('.dockZoom').getBoundingClientRect().height;
-    const borders = 2; // 1px top + 1px bottom
-
-    // Max-height pour la zone scroll des couleurs
-    const scrollMax = Math.max(60, availableH - (padV + titleH + buttonsH + borders + 8));
-    paletteScroll.style.maxHeight = `${Math.floor(scrollMax)}px`;
-  }
-  // Recalcule au chargement, au resize, et quand l'UI réflow potentiellement
-  window.addEventListener('load', layoutPalette);
-  window.addEventListener('resize', layoutPalette);
-  window.addEventListener('orientationchange', layoutPalette);
-  // Petite sécurité si des polices se chargent plus tard
-  setTimeout(layoutPalette, 200);
-  setTimeout(layoutPalette, 800);
 
   // === Storage helpers (PNG) ===
   function formatParisFilename(prefix="snapshot", ext="png") {
@@ -338,9 +315,13 @@
   }
 
   // === Reset & archive coordination ===
-  const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
-  const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
-  const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
+  const PERIOD_RESET   = 48*60*60*1000;  // 48h
+  const PERIOD_ARCHIVE = 60*1000;        // 1 min
+  const nextResetRef   = db.ref('config/nextResetAt');
+  const lastResetRef   = db.ref('config/lastResetAt');
+  const nextArchRef    = db.ref('config/nextArchiveAt');
+  const lastArchRef    = db.ref('config/lastArchiveAt');
+
   function updateCountdown(ts){
     if (!ts) { countdownEl.textContent = '—'; return; }
     const left = ts - Date.now();
@@ -366,6 +347,7 @@
       redrawAll();
     }
   }
+
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
     const res = await nextArchRef.transaction(cur => {
@@ -384,21 +366,13 @@
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
 
-  // === Préférence d’affichage de la grille ===
-  const gridPrefKey = 'pw-show-grid';
-  showGridChk.checked = localStorage.getItem(gridPrefKey) === '1';
-  showGridChk.addEventListener('change', ()=>{
-    localStorage.setItem(gridPrefKey, showGridChk.checked ? '1' : '0');
-    redrawAll();
-  });
-
-  // === Auth + live ===
+  // Auth anonyme + présence + listeners
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
     const uid = user.uid;
 
-    // Présence
+    // Présence (différentiel)
     const myPresenceRef = presenceRootRef.child(uid);
     infoConnectedRef.on('value', snap => {
       if (snap.val() === true) {
@@ -406,48 +380,44 @@
         myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
       }
     });
-    presenceRootRef.on('value', s => {
-      const val = s.val() || {};
-      onlineEl.textContent = String(Object.keys(val).length);
-      onlineEl.classList.remove('dim');
+    // Compteur connectés via child_added/removed
+    let online = 0;
+    presenceRootRef.once('value').then(s => {
+      online = s.numChildren(); onlineEl.textContent = String(online); onlineEl.classList.remove('dim');
     });
+    presenceRootRef.on('child_added',  ()=>{ online++; onlineEl.textContent = String(online); });
+    presenceRootRef.on('child_removed', ()=>{ online = Math.max(0, online-1); onlineEl.textContent = String(online); });
 
-    // Compteur clics
-    clicksRef.on('value', s => {
-      clickEl.textContent = String(s.val() || 0);
-      clickEl.classList.remove('dim');
-    });
+    // Compteur clics (total)
+    clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
 
     // Pixels live
     const pixelsRef = db.ref('pixels');
+    // Charge l'état existant
     pixelsRef.once('value').then(snap => {
       const val = snap.val() || {};
       for (const key in val) {
         const [x,y] = key.split('_').map(Number);
-        grid[y][x] = Number.isFinite(+val[key].color) ? +val[key].color : 1;
+        const col = Number.isFinite(+val[key].color) ? +val[key].color : 1;
+        if (x>=0 && x<W && y>=0 && y<H) grid[y][x] = col;
       }
       redrawAll();
     });
+    // Écoute des changements en temps réel
     pixelsRef.on('child_added', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      grid[y][x] = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      drawCell(x,y);
-      if (showGridChk.checked) drawGridOverlay();
+      const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
+      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); if (showGridChk.checked) drawGridOverlay(); }
     });
     pixelsRef.on('child_changed', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      grid[y][x] = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      drawCell(x,y);
-      if (showGridChk.checked) drawGridOverlay();
+      const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
+      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); if (showGridChk.checked) drawGridOverlay(); }
     });
 
     // Pose de pixel (corrigée pour le zoom) + incrément compteur
     canvas.addEventListener('click', async (e)=>{
-      const rect = canvas.getBoundingClientRect();
-      const localX = (e.clientX - rect.left) / zoom;
-      const localY = (e.clientY - rect.top)  / zoom;
-      const x = Math.floor(localX / PIX);
-      const y = Math.floor(localY / PIX);
+      const {x,y} = screenToGrid(e.clientX, e.clientY);
       if (x<0||x>=W||y<0||y>=H) return;
       if (selected < 0 || selected >= colors.length) return;
       try {
@@ -456,11 +426,23 @@
       } catch (err) { console.error('write pixel / click count error', err); }
     });
 
+    // Raccourci Shift + molette (desktop) = changer de couleur
+    canvas.addEventListener('wheel', e => {
+      if (e.shiftKey) {
+        e.preventDefault();
+        if (e.deltaY > 0) selected = (selected + 1) % colors.length;
+        else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
+        // update visuel palette
+        [...rail.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx===selected));
+        updateCursor();
+      }
+    }, { passive: false });
+
     // Tickers
     tryReset();
-    setInterval(tryReset,   60*1000);
-    setInterval(tryArchive, 10*1000);
-    setInterval(async ()=>{
+    setInterval(tryReset,   60*1000);  // check reset chaque minute
+    setInterval(tryArchive, 10*1000);  // check archive toutes les 10s (fenêtre 60s)
+    setInterval(async ()=>{            // countdown
       const snap = await nextResetRef.get();
       updateCountdown(snap.val());
     }, 1000);
