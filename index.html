@@ -135,20 +135,13 @@
 
   // === Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
- const colors = [
-    '#000000', // noir
-    '#FFFFFF', // blanc
-   
-    '#E91E63','#9C27B0','#3F51B5',
-    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-     '#E0E0E0', // gris clair
-    '#9E9E9E', // gris moyen
-    '#616161', // gris foncé
-
+  const colors = [
+    '#000000','#FFFFFF','#E0E0E0','#9E9E9E','#616161',
+    '#E91E63','#9C27B0','#3F51B5','#03A9F4','#009688',
+    '#8BC34A','#FFEB3B','#FF9800','#AD1457','#6A1B9A',
+    '#283593','#0288D1','#00695C','#558B2F','#FBC02D',
+    '#EF6C00','#D84315','#795548'
   ];
-
   let selected = 2;
 
   const canvas   = document.getElementById('board');
