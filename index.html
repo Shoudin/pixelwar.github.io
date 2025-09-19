@@ -2,8 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <!-- Empêche le pinch-zoom de la PAGE pour garder la palette stable ; on zoome le canvas via les boutons -->
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- On évite le pinch-zoom de la page ; on zoome le canvas via les boutons -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante + Grille + Coordonnées</title>
   <style>
     :root { --sidebar-w: 92px; }
@@ -14,28 +14,37 @@
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette flottante verticale — fixée, toujours dans l'écran (svh + safe areas) */
+    /* Palette flottante verticale — fixe, toujours visible (svh + safe areas) */
     #paletteDock {
       position: fixed;
       left: calc(16px + env(safe-area-inset-left));
-      top: calc(16px + env(safe-area-inset-top));
+      top:  calc(16px + env(safe-area-inset-top));
       bottom: calc(16px + env(safe-area-inset-bottom));
       width: var(--sidebar-w);
       max-height: calc(100svh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
       padding: 10px 8px;
       border: 1px solid #333; border-radius: 12px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.12);
-      display: flex; flex-direction: column; gap: 8px; overflow: auto; z-index: 10;
+      display: flex; flex-direction: column; gap: 10px; overflow: auto; z-index: 10;
     }
-    #paletteDock .head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    #paletteDock h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444; }
-    .dockZoom { display:flex; gap:6px; }
-    .dockZoom button { width: 34px; height: 28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; }
-
+    #paletteDock h3 {
+      margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444;
+      position: sticky; top: 0; background: #fff; padding-bottom: 2px;
+    }
     .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
     .swRow { display:flex; gap:6px; flex-wrap: wrap; }
     .activeSw { outline: 2px solid #000; outline-offset: 2px; }
 
+    /* Boutons + / − sous la palette (pleine largeur) */
+    .dockZoom {
+      display:flex; gap:8px; margin-top: 2px;
+    }
+    .dockZoom button {
+      flex:1 1 0; height: 34px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
+      font-size: 16px; line-height: 1;
+    }
+
+    /* Contrôles de zoom en haut (on garde aussi) */
     .zoomControls { display:flex; gap:8px; align-items:center; }
     .zoomControls button { cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
@@ -46,6 +55,7 @@
       :root { --sidebar-w: 76px; }
       .sw { width:24px; height:24px; }
       #stageArea { margin-left: calc(var(--sidebar-w) + 12px); }
+      .dockZoom button { height: 32px; }
     }
   </style>
 </head>
@@ -56,7 +66,7 @@
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
-    <!-- On garde aussi des boutons de zoom en haut si tu veux les deux endroits -->
+    <!-- On garde aussi des boutons de zoom en haut (optionnels) -->
     <div class="zoomControls">
       <button id="zOut"  title="Zoom -">−</button>
       <div class="level" id="zLevel">100%</div>
@@ -71,15 +81,14 @@
 
   <!-- Palette flottante -->
   <aside id="paletteDock" aria-label="Palette de couleurs">
-    <div class="head">
-      <h3>Palette</h3>
-      <!-- Boutons + / − sur la palette (sans pourcentage) -->
-      <div class="dockZoom">
-        <button id="dockZOut" title="Zoom -">−</button>
-        <button id="dockZIn"  title="Zoom +">+</button>
-      </div>
-    </div>
+    <h3>Palette</h3>
     <div class="swRow" id="palette"></div>
+
+    <!-- Boutons + / − SOUS les couleurs -->
+    <div class="dockZoom">
+      <button id="dockZOut" title="Zoom -">−</button>
+      <button id="dockZIn"  title="Zoom +">+</button>
+    </div>
   </aside>
 
   <!-- Zone de scène zoomable -->
@@ -97,7 +106,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-const firebaseConfig = {
+ const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -125,7 +134,7 @@ const firebaseConfig = {
   // === Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
   const colors = [
-   '#000000', // noir
+    '#000000', // noir
     '#FFFFFF', // blanc
    
     '#E91E63','#9C27B0','#3F51B5',
@@ -137,16 +146,17 @@ const firebaseConfig = {
     '#616161', // gris foncé
 
   ];
+
   let selected = 2;
 
-  const canvas = document.getElementById('board');
-  const ctx = canvas.getContext('2d');
-  const paletteEl = document.getElementById('palette');
+  const canvas   = document.getElementById('board');
+  const ctx      = canvas.getContext('2d');
+  const paletteEl= document.getElementById('palette');
   const countdownEl = document.getElementById('countdown');
   const onlineEl = document.getElementById('onlineCount');
-  const clickEl = document.getElementById('clickCount');
+  const clickEl  = document.getElementById('clickCount');
   const coordsEl = document.getElementById('coords');
-  const stageWrap = document.getElementById('stageWrap');
+  const stageWrap= document.getElementById('stageWrap');
   const zLevelEl = document.getElementById('zLevel');
   const showGridChk = document.getElementById('showGridChk');
 
@@ -194,7 +204,7 @@ const firebaseConfig = {
   }
   redrawAll();
 
-  // === Curseur coloré (SVG data URL) ===
+  // === Curseur coloré ===
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -250,7 +260,7 @@ const firebaseConfig = {
   document.getElementById('zOut').onclick   = zoomOut;
   document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); };
 
-  // Boutons + / − sur la palette
+  // Boutons + / − dans la PALETTE (sous les couleurs)
   document.getElementById('dockZIn').onclick  = zoomIn;
   document.getElementById('dockZOut').onclick = zoomOut;
 
