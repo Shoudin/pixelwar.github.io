@@ -30,7 +30,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
   <script>
-  // === 1) Config Firebase ===
+  // === 1) Config Firebase (remplace PASTE_ME) ===
   const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
@@ -52,27 +52,29 @@
 };
 
 
-  // === Init ===
+  // === Init Firebase ===
   firebase.initializeApp(firebaseConfig);
   const auth     = firebase.auth();
   const db       = firebase.database();
   const storage  = firebase.storage();
 
-  // === 3) Paramètres mosaïque ===
+  // === 2) Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
- const colors = [
-  '#000000', // noir
-  '#FFFFFF', // blanc
-  '#E91E63','#9C27B0','#3F51B5',
-  '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-  '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-  '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-     '#E0E0E0', // gris clair
-  '#9E9E9E', // gris moyen
-  '#616161', // gris foncé
 
-]; // palette enrichie (tu peux la modifier)
-  let selected = 2;
+  // Palette actuelle + 3 gris (clair/moyen/foncé) + variantes rouges/marrons déjà demandées
+  const colors = [
+    '#000000', // noir
+    '#FFFFFF', // blanc
+    '#E0E0E0', // gris clair
+    '#9E9E9E', // gris moyen
+    '#616161', // gris foncé
+
+    '#E91E63','#9C27B0','#3F51B5',
+    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
+    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
+    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548'
+  ];
+  let selected = 2; // index couleur par défaut (rose vif ici)
 
   const canvas       = document.getElementById('board');
   const ctx          = canvas.getContext('2d');
@@ -81,22 +83,50 @@
   const onlineEl     = document.getElementById('onlineCount');
   const clickEl      = document.getElementById('clickCount');
 
-  // Palette UI
-  colors.forEach((c,i)=>{
-    const sw = document.createElement('div');
-    sw.className = 'sw'; sw.style.background = c; sw.title = c;
-    sw.onclick = ()=>{ selected = i; };
-    paletteEl.appendChild(sw);
-  });
-
-  // Buffer + dessin
+  // === 3) Helpers dessin ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullDraw(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
-  fullDraw();
   function safeColor(v){ const n=Number(v); return Number.isFinite(n)? n: 1; }
+  fullDraw();
 
-  // === 4) Storage helpers (PNG) ===
+  // === 4) Curseur coloré dynamique (SVG data URL) ===
+  function makeColorCursor(hex, size = 22) {
+    const r = Math.floor(size/2) - 2;
+    const svg =
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>` +
+        `<circle cx='${size/2}' cy='${size/2}' r='${r}' fill='${hex}'/>` +
+        `<circle cx='${size/2}' cy='${size/2}' r='${r-0.5}' fill='none' stroke='white' stroke-width='2'/>` +
+        `<circle cx='${size/2}' cy='${size/2}' r='${r-2.5}' fill='none' stroke='black' stroke-width='1.5'/>` +
+      `</svg>`;
+    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
+  }
+
+  // === 5) UI palette + curseur initial ===
+  colors.forEach((c,i)=>{
+    const sw = document.createElement('div');
+    sw.className = 'sw'; sw.style.background = c; sw.title = c;
+    sw.onclick = ()=>{
+      selected = i;
+      canvas.style.cursor = makeColorCursor(colors[selected]);
+    };
+    paletteEl.appendChild(sw);
+  });
+  canvas.style.cursor = makeColorCursor(colors[selected]);
+  canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor = makeColorCursor(colors[selected]); });
+  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; });
+
+  // === 6) Shift + molette = changer de couleur ===
+  canvas.addEventListener('wheel', e => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      if (e.deltaY > 0) selected = (selected + 1) % colors.length;
+      else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
+      canvas.style.cursor = makeColorCursor(colors[selected]);
+    }
+  }, { passive: false });
+
+  // === 7) Storage helpers (PNG) ===
   function formatParisFilename(prefix="snapshot", ext="png") {
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const parts = fmt.formatToParts(new Date());
@@ -116,7 +146,7 @@
     return { path, url };
   }
 
-  // === 5) Reset & archive coordination ===
+  // === 8) Reset & archive coordination ===
   const PERIOD_RESET   = 48*60*60*1000;  // 48h
   const PERIOD_ARCHIVE = 60*1000;        // 1 min
   const nextResetRef   = db.ref('config/nextResetAt');
@@ -131,7 +161,7 @@
     const h = Math.floor(left/3_600_000);
     const m = Math.floor((left%3_600_000)/60_000);
     const s = Math.floor((left%60_000)/1000);
- countdownEl.textContent = `${h}h ${m}m ${s}s`;
+    countdownEl.textContent = `${h}h ${m}m ${s}s`;
   }
   nextResetRef.on('value', s => updateCountdown(s.val()));
 
@@ -170,12 +200,12 @@
     }
   }
 
-  // === 6) Présence + compteur de clics ===
+  // === 9) Présence + compteur clics ===
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
-  const clicksRef        = db.ref('stats/clicksTotal');  // compteur global
+  const clicksRef        = db.ref('stats/clicksTotal');  // total cumulé
 
-  // === 7) Auth + live ===
+  // === 10) Auth + live ===
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
@@ -196,7 +226,7 @@
       onlineEl.classList.remove('dim');
     });
 
-    // Compteur de clics en direct
+    // Compteur de clics
     clicksRef.on('value', s => {
       const n = s.val() || 0;
       clickEl.textContent = String(n);
@@ -224,7 +254,7 @@
       drawCell(x,y);
     });
 
-    // Peinture illimitée + incrément du compteur
+    // Peinture illimitée + incrément du compteur global
     canvas.addEventListener('click', async (e)=>{
       const rect = canvas.getBoundingClientRect();
       const x = Math.floor((e.clientX - rect.left)/PIX);
@@ -239,9 +269,9 @@
 
     // Tickers
     tryReset();
-    setInterval(tryReset,   60*1000);
-    setInterval(tryArchive, 10*1000);
-    setInterval(async ()=>{
+    setInterval(tryReset,   60*1000);   // check reset chaque minute
+    setInterval(tryArchive, 10*1000);   // check archive toutes les 10s (fenêtre 60s)
+    setInterval(async ()=>{             // countdown
       const snap = await nextResetRef.get();
       updateCountdown(snap.val());
     }, 1000);
@@ -249,5 +279,3 @@
   </script>
 </body>
 </html>
-
-
