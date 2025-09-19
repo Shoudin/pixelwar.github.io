@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <!-- On évite le pinch-zoom de la page ; on zoome le canvas via les boutons -->
+  <!-- On évite le pinch-zoom de la PAGE ; on zoome le canvas via les boutons -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante + Grille + Coordonnées</title>
   <style>
@@ -10,35 +10,36 @@
     body { font-family: system-ui, sans-serif; margin: 16px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
+
+    /* Scène (le canvas) */
     #stageArea { margin-left: calc(var(--sidebar-w) + 16px); }
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette flottante verticale — fixe, toujours visible (svh + safe areas) */
+    /* Palette flottante verticale — fixée ; hauteur contrôlée par JS
+       On ne met PAS bottom/max-height ici : JS calcule top + la zone scroll interne */
     #paletteDock {
       position: fixed;
       left: calc(16px + env(safe-area-inset-left));
-      top:  calc(16px + env(safe-area-inset-top));
-      bottom: calc(16px + env(safe-area-inset-bottom));
+      /* top dynamique en JS pour ne pas chevaucher l'en-tête */
       width: var(--sidebar-w);
-      max-height: calc(100svh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
       padding: 10px 8px;
       border: 1px solid #333; border-radius: 12px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.12);
-      display: flex; flex-direction: column; gap: 10px; overflow: auto; z-index: 10;
+      display: flex; flex-direction: column; gap: 10px; z-index: 10;
+      /* pas d'overflow ici : c'est la zone des couleurs qui scrolle */
     }
     #paletteDock h3 {
       margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444;
-      position: sticky; top: 0; background: #fff; padding-bottom: 2px;
     }
+    /* Zone scrollable des couleurs (hauteur calculée par JS) */
+    #paletteScroll { overflow: auto; }
     .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
     .swRow { display:flex; gap:6px; flex-wrap: wrap; }
     .activeSw { outline: 2px solid #000; outline-offset: 2px; }
 
     /* Boutons + / − sous la palette (pleine largeur) */
-    .dockZoom {
-      display:flex; gap:8px; margin-top: 2px;
-    }
+    .dockZoom { display:flex; gap:8px; }
     .dockZoom button {
       flex:1 1 0; height: 34px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
       font-size: 16px; line-height: 1;
@@ -66,7 +67,6 @@
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
-    <!-- On garde aussi des boutons de zoom en haut (optionnels) -->
     <div class="zoomControls">
       <button id="zOut"  title="Zoom -">−</button>
       <div class="level" id="zLevel">100%</div>
@@ -82,8 +82,10 @@
   <!-- Palette flottante -->
   <aside id="paletteDock" aria-label="Palette de couleurs">
     <h3>Palette</h3>
-    <div class="swRow" id="palette"></div>
-
+    <!-- Zone scrollable des couleurs -->
+    <div id="paletteScroll">
+      <div class="swRow" id="palette"></div>
+    </div>
     <!-- Boutons + / − SOUS les couleurs -->
     <div class="dockZoom">
       <button id="dockZOut" title="Zoom -">−</button>
@@ -133,7 +135,7 @@
 
   // === Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
-  const colors = [
+ const colors = [
     '#000000', // noir
     '#FFFFFF', // blanc
    
@@ -152,11 +154,14 @@
   const canvas   = document.getElementById('board');
   const ctx      = canvas.getContext('2d');
   const paletteEl= document.getElementById('palette');
+  const paletteDock = document.getElementById('paletteDock');
+  const paletteScroll = document.getElementById('paletteScroll');
   const countdownEl = document.getElementById('countdown');
   const onlineEl = document.getElementById('onlineCount');
   const clickEl  = document.getElementById('clickCount');
   const coordsEl = document.getElementById('coords');
   const stageWrap= document.getElementById('stageWrap');
+  const stageArea= document.getElementById('stageArea');
   const zLevelEl = document.getElementById('zLevel');
   const showGridChk = document.getElementById('showGridChk');
 
@@ -284,6 +289,40 @@
       coordsEl.textContent = '—';
     }
   });
+
+  // === Layout de la palette : ne pas monter au-dessus de la fresque et limiter la hauteur ===
+  function layoutPalette() {
+    const uiRect = document.querySelector('.ui').getBoundingClientRect();
+    const stageRect = stageArea.getBoundingClientRect(); // bord supérieur de la fresque
+    const safeTop = 16;   // marge supérieure mini
+    const safeBot = 16;   // marge inférieure mini
+
+    // Top = au moins sous l'UI, et pas moins que 16px
+    const topPx = Math.max(uiRect.bottom + 8, safeTop);
+    paletteDock.style.top = `${Math.round(topPx)}px`;
+
+    // Hauteur dispo à l'écran sous ce top (sans aller jusqu'au bord bas)
+    const viewportH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const availableH = Math.max(120, viewportH - topPx - safeBot); // minimum 120px au cas où
+
+    // Calculer la place que prennent: titre + padding + boutons
+    const dockStyles = getComputedStyle(paletteDock);
+    const padV = parseFloat(dockStyles.paddingTop) + parseFloat(dockStyles.paddingBottom);
+    const titleH = paletteDock.querySelector('h3').getBoundingClientRect().height;
+    const buttonsH = paletteDock.querySelector('.dockZoom').getBoundingClientRect().height;
+    const borders = 2; // 1px top + 1px bottom
+
+    // Max-height pour la zone scroll des couleurs
+    const scrollMax = Math.max(60, availableH - (padV + titleH + buttonsH + borders + 8));
+    paletteScroll.style.maxHeight = `${Math.floor(scrollMax)}px`;
+  }
+  // Recalcule au chargement, au resize, et quand l'UI réflow potentiellement
+  window.addEventListener('load', layoutPalette);
+  window.addEventListener('resize', layoutPalette);
+  window.addEventListener('orientationchange', layoutPalette);
+  // Petite sécurité si des polices se chargent plus tard
+  setTimeout(layoutPalette, 200);
+  setTimeout(layoutPalette, 800);
 
   // === Storage helpers (PNG) ===
   function formatParisFilename(prefix="snapshot", ext="png") {
