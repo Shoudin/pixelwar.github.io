@@ -3,25 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante</title>
+  <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante + Grille</title>
   <style>
     :root { --sidebar-w: 92px; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
-
-    /* Zone de scène : on décale pour ne pas être sous la palette fixe */
     #stageArea { margin-left: calc(var(--sidebar-w) + 16px); }
     #stageWrap { display:inline-block; transform-origin: top left; }
-
-    /* Canvas */
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
-
-    /* Palette flottante fixe à gauche, verticale */
     #paletteDock {
       position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
-      width: var(--sidebar-w);
-      max-height: 80vh; padding: 10px 8px;
+      width: var(--sidebar-w); max-height: 80vh; padding: 10px 8px;
       border: 1px solid #333; border-radius: 12px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.12);
       display: flex; flex-direction: column; gap: 8px; overflow: auto; z-index: 10;
@@ -30,13 +23,10 @@
     .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
     .swRow { display:flex; gap:6px; flex-wrap: wrap; }
     .activeSw { outline: 2px solid #000; outline-offset: 2px; }
-
-    /* Boutons zoom (en-tête) */
     .zoomControls { display:flex; gap:8px; align-items:center; }
     .zoomControls button { cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
-
-    /* Evite que la palette masque le canvas en petits écrans */
+    .toggle { display:flex; gap:6px; align-items:center; }
     @media (max-width: 640px) {
       :root { --sidebar-w: 76px; }
       .sw { width:24px; height:24px; }
@@ -55,6 +45,10 @@
       <button id="zIn" title="Zoom +">+</button>
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
     </div>
+    <label class="toggle" title="Afficher/masquer la grille">
+      <input type="checkbox" id="showGridChk">
+      Grille
+    </label>
   </div>
 
   <!-- Palette flottante -->
@@ -63,7 +57,7 @@
     <div class="swRow" id="palette"></div>
   </aside>
 
-  <!-- Zone de scène zoomable (la palette n'est pas dedans, donc ne zoome pas) -->
+  <!-- Zone de scène zoomable -->
   <div id="stageArea">
     <div id="stageWrap">
       <canvas id="board" width="1000" height="1000"></canvas>
@@ -77,71 +71,101 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
   <script>
-  // === 1) Config Firebase (remplace PASTE_ME) ===
- const firebaseConfig = {
-
-  apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
-
-  authDomain: "shoudinpixelwar.firebaseapp.com",
-
-  databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
-
-  projectId: "shoudinpixelwar",
-
-  storageBucket: "shoudinpixelwar.firebasestorage.app",
-
-  messagingSenderId: "896929635521",
-
-  appId: "1:896929635521:web:357f7b8a29cb5045684840",
-
-  measurementId: "G-FR7NC03RCY"
-
-};
-
-
-  // === Init Firebase ===
+  // === Config Firebase (remplace PASTE_ME) ===
+  const firebaseConfig = {
+    apiKey: "PASTE_ME",
+    authDomain: "PASTE_ME",
+    databaseURL: "PASTE_ME",
+    projectId: "PASTE_ME",
+    storageBucket: "PASTE_ME",
+    messagingSenderId: "PASTE_ME",
+    appId: "PASTE_ME"
+  };
   firebase.initializeApp(firebaseConfig);
-  const auth     = firebase.auth();
-  const db       = firebase.database();
-  const storage  = firebase.storage();
+  const auth = firebase.auth();
+  const db = firebase.database();
+  const storage = firebase.storage();
 
-  // === 2) Paramètres mosaïque & palette ===
+  // === Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
-
-  // Palette actuelle + gris ajoutés + variantes rouges/marrons etc.
   const colors = [
-    '#000000', // noir
-    '#FFFFFF', // blanc
-
-    '#E91E63','#9C27B0','#3F51B5',
-    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-     '#E0E0E0', // gris clair
-    '#9E9E9E', // gris moyen
-    '#616161', // gris foncé
-
+    '#000000','#FFFFFF','#9C27B0','#3F51B5','#03A9F4','#009688',
+    '#8BC34A','#FFEB3B','#FF9800','#AD1457','#6A1B9A',
+    '#283593','#0288D1','#00695C','#558B2F','#FBC02D',
+    '#EF6C00','#D84315','#795548','#E0E0E0','#9E9E9E','#616161',
+    '#E91E63'
   ];
-  let selected = 2; // couleur par défaut
+  let selected = 2;
 
-  // Canvas & scène zoomable
-  const canvas      = document.getElementById('board');
-  const ctx         = canvas.getContext('2d');
-  const paletteEl   = document.getElementById('palette');
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const paletteEl = document.getElementById('palette');
   const countdownEl = document.getElementById('countdown');
-  const onlineEl    = document.getElementById('onlineCount');
-  const clickEl     = document.getElementById('clickCount');
-  const stageWrap   = document.getElementById('stageWrap');
-  const zLevelEl    = document.getElementById('zLevel');
+  const onlineEl = document.getElementById('onlineCount');
+  const clickEl = document.getElementById('clickCount');
+  const stageWrap = document.getElementById('stageWrap');
+  const zLevelEl = document.getElementById('zLevel');
+  const showGridChk = document.getElementById('showGridChk');
 
-  // === 3) Helpers dessin ===
+  // === Dessin & grille ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
-  function fullDraw(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
-  function safeColor(v){ const n=Number(v); return Number.isFinite(n)? n: 1; }
-  fullDraw();
+  function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
 
-  // === 4) Curseur coloré dynamique (SVG data URL) ===
+  // Grille: lignes fines + marqueurs tous les 10
+  function drawGridOverlay() {
+    const thin = 'rgba(0,0,0,0.15)';
+    const bold = 'rgba(0,0,0,0.35)';
+    ctx.save();
+    ctx.lineWidth = 1;
+
+    // Lignes verticales
+    ctx.beginPath();
+    ctx.strokeStyle = thin;
+    for (let x=0; x<=W; x++){
+      const xx = x*PIX + 0.5; // pixel-perfect
+      // traits plus marqués tous les 10
+      if (x % 10 === 0) {
+        ctx.stroke(); // flush fines
+        ctx.beginPath();
+        ctx.strokeStyle = bold;
+        ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.strokeStyle = thin;
+      } else {
+        ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX);
+      }
+    }
+    ctx.stroke();
+
+    // Lignes horizontales
+    ctx.beginPath();
+    ctx.strokeStyle = thin;
+    for (let y=0; y<=H; y++){
+      const yy = y*PIX + 0.5;
+      if (y % 10 === 0) {
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.strokeStyle = bold;
+        ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.strokeStyle = thin;
+      } else {
+        ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function redrawAll() {
+    fullPixels();
+    if (showGridChk.checked) drawGridOverlay();
+  }
+
+  // === Palette UI + curseur coloré ===
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -152,8 +176,6 @@
       `</svg>`;
     return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
   }
-
-  // === 5) Palette UI (flottante) + curseur initial ===
   function renderPalette() {
     paletteEl.innerHTML = '';
     colors.forEach((c,i)=>{
@@ -169,16 +191,14 @@
     });
   }
   function updateActiveSw() {
-    [...paletteEl.children].forEach((el, idx)=>{
-      el.classList.toggle('activeSw', idx === selected);
-    });
+    [...paletteEl.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx === selected));
   }
   renderPalette();
   canvas.style.cursor = makeColorCursor(colors[selected]);
   canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor = makeColorCursor(colors[selected]); });
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; });
 
-  // === 6) Shift + molette = changer de couleur ===
+  // Shift + molette = changer de couleur
   canvas.addEventListener('wheel', e => {
     if (e.shiftKey) {
       e.preventDefault();
@@ -189,18 +209,14 @@
     }
   }, { passive: false });
 
-  // === 7) Zoom sur la mosaïque (palette non affectée) ===
-  let zoom = 1; // 1 = 100%
-  function applyZoom() {
-    stageWrap.style.transform = `scale(${zoom})`;
-    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
-  }
+  // === Zoom mosaïque ===
+  let zoom = 1; function applyZoom(){ stageWrap.style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
   document.getElementById('zIn').onclick   = ()=>{ zoom = Math.min(4, zoom * 1.25); applyZoom(); };
   document.getElementById('zOut').onclick  = ()=>{ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); };
   document.getElementById('zReset').onclick= ()=>{ zoom = 1; applyZoom(); };
   applyZoom();
 
-  // === 8) Storage helpers (PNG) ===
+  // === Storage helpers (PNG) ===
   function formatParisFilename(prefix="snapshot", ext="png") {
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const parts = fmt.formatToParts(new Date());
@@ -220,66 +236,62 @@
     return { path, url };
   }
 
-  // === 9) Reset & archive coordination ===
-  const PERIOD_RESET   = 48*60*60*1000;  // 48h
-  const PERIOD_ARCHIVE = 60*1000;        // 1 min
-  const nextResetRef   = db.ref('config/nextResetAt');
-  const lastResetRef   = db.ref('config/lastResetAt');
-  const nextArchRef    = db.ref('config/nextArchiveAt');
-  const lastArchRef    = db.ref('config/lastArchiveAt');
-
+  // === Reset & archive coordination ===
+  const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
+  const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
+  const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
   function updateCountdown(ts){
     if (!ts) { countdownEl.textContent = '—'; return; }
     const left = ts - Date.now();
     if (left <= 0) { countdownEl.textContent = 'reset imminent…'; return; }
-    const h = Math.floor(left/3_600_000);
-    const m = Math.floor((left%3_600_000)/60_000);
-    const s = Math.floor((left%60_000)/1000);
+    const h = Math.floor(left/3_600_000), m = Math.floor((left%3_600_000)/60_000), s = Math.floor((left%60_000)/1000);
     countdownEl.textContent = `${h}h ${m}m ${s}s`;
   }
   nextResetRef.on('value', s => updateCountdown(s.val()));
 
   async function tryReset(){
-    const now = Date.now();
-    let commit = false, newNext = null;
+    const now=Date.now(); let commit=false, newNext=null;
     const res = await nextResetRef.transaction(cur => {
-      if (cur === null) { newNext = now + PERIOD_RESET; commit = true; return newNext; }
-      if (now >= cur)   { newNext = now + PERIOD_RESET; commit = true; return newNext; }
+      if (cur===null){ newNext=now+PERIOD_RESET; commit=true; return newNext; }
+      if (now>=cur){ newNext=now+PERIOD_RESET; commit=true; return newNext; }
       return;
     });
     if (res.committed && commit) {
-      try { fullDraw(); await uploadSnapshot('resets', formatParisFilename('reset','png')); }
+      try { redrawAll(); await uploadSnapshot('resets', formatParisFilename('reset','png')); }
       catch(e){ console.warn('Snapshot reset échoué:', e); }
       await db.ref('pixels').remove();
       await lastResetRef.set(now);
       grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
-      fullDraw();
+      redrawAll();
     }
   }
-
   async function tryArchive(){
-    const now = Date.now();
-    let commit = false, newNext = null;
+    const now=Date.now(); let commit=false, newNext=null;
     const res = await nextArchRef.transaction(cur => {
-      if (cur === null) { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
-      if (now >= cur)   { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
+      if (cur===null){ newNext=now+PERIOD_ARCHIVE; commit=true; return newNext; }
+      if (now>=cur){ newNext=now+PERIOD_ARCHIVE; commit=true; return newNext; }
       return;
     });
     if (res.committed && commit) {
-      try {
-        fullDraw();
-        await uploadSnapshot('archive', formatParisFilename('archive','png'));
-        await lastArchRef.set(now);
-      } catch(e) { console.warn('Archive échouée:', e); }
+      try { redrawAll(); await uploadSnapshot('archive', formatParisFilename('archive','png')); await lastArchRef.set(now); }
+      catch(e){ console.warn('Archive échouée:', e); }
     }
   }
 
-  // === 10) Présence + compteur clics ===
+  // === Présence + compteur clics ===
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
 
-  // === 11) Auth + live ===
+  // === Préférence d’affichage de la grille ===
+  const gridPrefKey = 'pw-show-grid';
+  showGridChk.checked = localStorage.getItem(gridPrefKey) === '1';
+  showGridChk.addEventListener('change', ()=>{
+    localStorage.setItem(gridPrefKey, showGridChk.checked ? '1' : '0');
+    redrawAll();
+  });
+
+  // === Auth + live ===
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
@@ -295,15 +307,13 @@
     });
     presenceRootRef.on('value', s => {
       const val = s.val() || {};
-      const count = Object.keys(val).length;
-      onlineEl.textContent = String(count);
+      onlineEl.textContent = String(Object.keys(val).length);
       onlineEl.classList.remove('dim');
     });
 
-    // Compteur de clics
+    // Compteur clics
     clicksRef.on('value', s => {
-      const n = s.val() || 0;
-      clickEl.textContent = String(n);
+      clickEl.textContent = String(s.val() || 0);
       clickEl.classList.remove('dim');
     });
 
@@ -313,22 +323,24 @@
       const val = snap.val() || {};
       for (const key in val) {
         const [x,y] = key.split('_').map(Number);
-        grid[y][x] = safeColor(val[key].color);
+        grid[y][x] = Number.isFinite(+val[key].color) ? +val[key].color : 1;
       }
-      fullDraw();
+      redrawAll();
     });
     pixelsRef.on('child_added', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      grid[y][x] = safeColor(snap.val().color);
+      grid[y][x] = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
       drawCell(x,y);
+      if (showGridChk.checked) drawGridOverlay(); // redessine la grille par-dessus
     });
     pixelsRef.on('child_changed', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      grid[y][x] = safeColor(snap.val().color);
+      grid[y][x] = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
       drawCell(x,y);
+      if (showGridChk.checked) drawGridOverlay();
     });
 
-    // Peinture illimitée + incrément du compteur
+    // Peinture + incrément
     canvas.addEventListener('click', async (e)=>{
       const rect = canvas.getBoundingClientRect();
       const x = Math.floor((e.clientX - rect.left)/PIX);
@@ -343,9 +355,9 @@
 
     // Tickers
     tryReset();
-    setInterval(tryReset,   60*1000);   // check reset chaque minute
-    setInterval(tryArchive, 10*1000);   // check archive toutes les 10s (fenêtre 60s)
-    setInterval(async ()=>{             // countdown
+    setInterval(tryReset,   60*1000);
+    setInterval(tryArchive, 10*1000);
+    setInterval(async ()=>{
       const snap = await nextResetRef.get();
       updateCountdown(snap.val());
     }, 1000);
