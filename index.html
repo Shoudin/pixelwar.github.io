@@ -125,4 +125,154 @@
     const h = Math.floor(left/3_600_000);
     const m = Math.floor((left%3_600_000)/60_000);
     const s = Math.floor((left%60_000)/1000);
-    countdown
+ countdownEl.textContent = `${h}h ${m}m ${s}s`;
+  }
+  nextResetRef.on('value', s => updateCountdown(s.val()));
+
+  async function tryReset(){
+    const now = Date.now();
+    let commit = false, newNext = null;
+    const res = await nextResetRef.transaction(cur => {
+      if (cur === null) { newNext = now + PERIOD_RESET; commit = true; return newNext; }
+      if (now >= cur)   { newNext = now + PERIOD_RESET; commit = true; return newNext; }
+      return;
+    });
+    if (res.committed && commit) {
+      try { fullDraw(); await uploadSnapshot('resets', formatParisFilename('reset','png')); }
+      catch(e){ console.warn('Snapshot reset échoué:', e); }
+      await db.ref('pixels').remove();
+      await lastResetRef.set(now);
+      grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+      fullDraw();
+    }
+  }
+
+  async function tryArchive(){
+    const now = Date.now();
+    let commit = false, newNext = null;
+    const res = await nextArchRef.transaction(cur => {
+      if (cur === null) { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
+      if (now >= cur)   { newNext = now + PERIOD_ARCHIVE; commit = true; return newNext; }
+      return;
+    });
+    if (res.committed && commit) {
+      try {
+        fullDraw();
+        await uploadSnapshot('archive', formatParisFilename('archive','png'));
+        await lastArchRef.set(now);
+      } catch(e) { console.warn('Archive échouée:', e); }
+    }
+  }
+
+  // === 6) Présence + compteur de clics ===
+  const infoConnectedRef = db.ref('.info/connected');
+  const presenceRootRef  = db.ref('presence');
+  const clicksRef        = db.ref('stats/clicksTotal');  // compteur global
+
+  // === 7) Auth + live ===
+  auth.signInAnonymously().catch(console.error);
+  auth.onAuthStateChanged(user => {
+    if (!user) return;
+    const uid = user.uid;
+
+    // Présence
+    const myPresenceRef = presenceRootRef.child(uid);
+    infoConnectedRef.on('value', snap => {
+      if (snap.val() === true) {
+        myPresenceRef.onDisconnect().remove().catch(()=>{});
+        myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+      }
+    });
+    presenceRootRef.on('value', s => {
+      const val = s.val() || {};
+      const count = Object.keys(val).length;
+      onlineEl.textContent = String(count);
+      onlineEl.classList.remove('dim');
+    });
+
+    // Compteur de clics en direct
+    clicksRef.on('value', s => {
+      const n = s.val() || 0;
+      clickEl.textContent = String(n);
+      clickEl.classList.remove('dim');
+    });
+
+    // Pixels live
+    const pixelsRef = db.ref('pixels');
+    pixelsRef.once('value').then(snap => {
+      const val = snap.val() || {};
+      for (const key in val) {
+        const [x,y] = key.split('_').map(Number);
+        grid[y][x] = safeColor(val[key].color);
+      }
+      fullDraw();
+    });
+    pixelsRef.on('child_added', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      grid[y][x] = safeColor(snap.val().color);
+      drawCell(x,y);
+    });
+    pixelsRef.on('child_changed', snap => {
+      const [x,y] = snap.key.split('_').map(Number);
+      grid[y][x] = safeColor(snap.val().color);
+      drawCell(x,y);
+    });
+
+    // Peinture illimitée + incrément du compteur
+    canvas.addEventListener('click', async (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left)/PIX);
+      const y = Math.floor((e.clientY - rect.top)/PIX);
+      if (x<0||x>=W||y<0||y>=H) return;
+      if (selected < 0 || selected >= colors.length) return;
+      try {
+        await db.ref(`pixels/${x}_${y}`).set({ color: selected });
+        await clicksRef.transaction(cur => (cur||0) + 1);
+      } catch (err) { console.error('write pixel / click count error', err); }
+    });
+
+    // Tickers
+    tryReset();
+    setInterval(tryReset,   60*1000);
+    setInterval(tryArchive, 10*1000);
+    setInterval(async ()=>{
+      const snap = await nextResetRef.get();
+      updateCountdown(snap.val());
+    }, 1000);
+  });
+  </script>
+</body>
+</html>
+
+2) Realtime Database — Rules (mets à jour pour « stats »)
+
+Ajoute la section stats (lecture publique, écriture pour utilisateurs connectés) et garde la borne < 64 pour les couleurs si tu l’utilises :
+
+{
+  "rules": {
+    ".read": true,
+    ".write": "auth != null",
+
+    "pixels": {
+      "$cell": {
+        ".validate": "newData.hasChildren(['color']) && newData.child('color').isNumber() && newData.child('color').val() >= 0 && newData.child('color').val() < 64"
+      }
+    },
+
+    "config": {
+      "$k": { ".read": true, ".write": "auth != null" }
+    },
+
+    "presence": {
+      "$uid": { ".read": true, ".write": "$uid === auth.uid" }
+    },
+
+    "stats": {
+      "$k": {
+        ".read": true,
+        ".write": "auth != null && newData.isNumber() && newData.val() >= 0"
+      }
+    }
+  }
+}
+
