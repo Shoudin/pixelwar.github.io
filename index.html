@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <!-- Empêche le pinch-zoom de la PAGE pour garder la palette stable ; on zoome le canvas via les boutons -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante + Grille + Coordonnées</title>
   <style>
@@ -13,15 +14,24 @@
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette flottante verticale */
+    /* Palette flottante verticale — fixée, toujours dans l'écran (svh + safe areas) */
     #paletteDock {
-      position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
-      width: var(--sidebar-w); max-height: 80vh; padding: 10px 8px;
+      position: fixed;
+      left: calc(16px + env(safe-area-inset-left));
+      top: calc(16px + env(safe-area-inset-top));
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      width: var(--sidebar-w);
+      max-height: calc(100svh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      padding: 10px 8px;
       border: 1px solid #333; border-radius: 12px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.12);
       display: flex; flex-direction: column; gap: 8px; overflow: auto; z-index: 10;
     }
-    #paletteDock h3 { margin: 0 0 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444; }
+    #paletteDock .head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    #paletteDock h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444; }
+    .dockZoom { display:flex; gap:6px; }
+    .dockZoom button { width: 34px; height: 28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; }
+
     .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
     .swRow { display:flex; gap:6px; flex-wrap: wrap; }
     .activeSw { outline: 2px solid #000; outline-offset: 2px; }
@@ -31,9 +41,11 @@
     .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
 
     .toggle { display:flex; gap:6px; align-items:center; }
+
     @media (max-width: 640px) {
       :root { --sidebar-w: 76px; }
       .sw { width:24px; height:24px; }
+      #stageArea { margin-left: calc(var(--sidebar-w) + 12px); }
     }
   </style>
 </head>
@@ -44,10 +56,11 @@
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
+    <!-- On garde aussi des boutons de zoom en haut si tu veux les deux endroits -->
     <div class="zoomControls">
-      <button id="zOut" title="Zoom -">−</button>
+      <button id="zOut"  title="Zoom -">−</button>
       <div class="level" id="zLevel">100%</div>
-      <button id="zIn" title="Zoom +">+</button>
+      <button id="zIn"   title="Zoom +">+</button>
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
@@ -58,7 +71,14 @@
 
   <!-- Palette flottante -->
   <aside id="paletteDock" aria-label="Palette de couleurs">
-    <h3>Palette</h3>
+    <div class="head">
+      <h3>Palette</h3>
+      <!-- Boutons + / − sur la palette (sans pourcentage) -->
+      <div class="dockZoom">
+        <button id="dockZOut" title="Zoom -">−</button>
+        <button id="dockZIn"  title="Zoom +">+</button>
+      </div>
+    </div>
     <div class="swRow" id="palette"></div>
   </aside>
 
@@ -77,7 +97,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
- const firebaseConfig = {
+const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -174,7 +194,7 @@
   }
   redrawAll();
 
-  // === Curseur coloré dynamique (SVG data URL) ===
+  // === Curseur coloré (SVG data URL) ===
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -209,7 +229,7 @@
   canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor = makeColorCursor(colors[selected]); });
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
 
-  // === Shift + molette = changer de couleur ===
+  // === Shift + molette = changer de couleur (desktop) ===
   canvas.addEventListener('wheel', e => {
     if (e.shiftKey) {
       e.preventDefault();
@@ -220,15 +240,23 @@
     }
   }, { passive: false });
 
-  // === Zoom (la palette ne zoome pas) ===
+  // === Zoom (palette inchangée) ===
   let zoom = 1;
   function applyZoom(){ stageWrap.style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
-  document.getElementById('zIn').onclick   = ()=>{ zoom = Math.min(4, zoom * 1.25); applyZoom(); };
-  document.getElementById('zOut').onclick  = ()=>{ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); };
-  document.getElementById('zReset').onclick= ()=>{ zoom = 1; applyZoom(); };
+  function zoomIn(){  zoom = Math.min(4, zoom * 1.25); applyZoom(); }
+  function zoomOut(){ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); }
+
+  document.getElementById('zIn').onclick    = zoomIn;
+  document.getElementById('zOut').onclick   = zoomOut;
+  document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); };
+
+  // Boutons + / − sur la palette
+  document.getElementById('dockZIn').onclick  = zoomIn;
+  document.getElementById('dockZOut').onclick = zoomOut;
+
   applyZoom();
 
-  // === Coordonnées en direct (x,y) — tient compte du zoom ===
+  // === Coordonnées (x,y) — tient compte du zoom ===
   function screenToGrid(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const localX = (clientX - rect.left) / zoom;
@@ -373,7 +401,11 @@
 
     // Pose de pixel (corrigée pour le zoom) + incrément compteur
     canvas.addEventListener('click', async (e)=>{
-      const {x,y} = screenToGrid(e.clientX, e.clientY);
+      const rect = canvas.getBoundingClientRect();
+      const localX = (e.clientX - rect.left) / zoom;
+      const localY = (e.clientY - rect.top)  / zoom;
+      const x = Math.floor(localX / PIX);
+      const y = Math.floor(localY / PIX);
       if (x<0||x>=W||y<0||y>=H) return;
       if (selected < 0 || selected >= colors.length) return;
       try {
@@ -394,4 +426,3 @@
   </script>
 </body>
 </html>
-
