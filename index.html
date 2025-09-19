@@ -3,14 +3,44 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur</title>
+  <title>Pixel War — Illimité + Reset 48h + Archive 1 min + Compteur + Palette flottante</title>
   <style>
+    :root { --sidebar-w: 92px; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
-    #board { image-rendering: pixelated; border: 1px solid #333; touch-action: manipulation; }
-    .palette { display:flex; gap:8px; margin:12px 0; flex-wrap: wrap; }
-    .sw { width:24px; height:24px; border:1px solid #000; cursor:pointer; }
-    .ui { display:flex; gap:16px; align-items:center; margin-bottom:8px; flex-wrap: wrap; }
-    .dim { opacity: .7 }
+    .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
+    .dim { opacity:.7 }
+
+    /* Zone de scène : on décale pour ne pas être sous la palette fixe */
+    #stageArea { margin-left: calc(var(--sidebar-w) + 16px); }
+    #stageWrap { display:inline-block; transform-origin: top left; }
+
+    /* Canvas */
+    #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
+
+    /* Palette flottante fixe à gauche, verticale */
+    #paletteDock {
+      position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
+      width: var(--sidebar-w);
+      max-height: 80vh; padding: 10px 8px;
+      border: 1px solid #333; border-radius: 12px; background: #fff;
+      box-shadow: 0 6px 18px rgba(0,0,0,.12);
+      display: flex; flex-direction: column; gap: 8px; overflow: auto; z-index: 10;
+    }
+    #paletteDock h3 { margin: 0 0 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#444; }
+    .sw { width: 28px; height: 28px; border:1px solid #000; border-radius: 6px; cursor:pointer; }
+    .swRow { display:flex; gap:6px; flex-wrap: wrap; }
+    .activeSw { outline: 2px solid #000; outline-offset: 2px; }
+
+    /* Boutons zoom (en-tête) */
+    .zoomControls { display:flex; gap:8px; align-items:center; }
+    .zoomControls button { cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
+    .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
+
+    /* Evite que la palette masque le canvas en petits écrans */
+    @media (max-width: 640px) {
+      :root { --sidebar-w: 76px; }
+      .sw { width:24px; height:24px; }
+    }
   </style>
 </head>
 <body>
@@ -19,9 +49,26 @@
     <div>Prochain reset : <span id="countdown" class="dim">chargement…</span></div>
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
+    <div class="zoomControls">
+      <button id="zOut" title="Zoom -">−</button>
+      <div class="level" id="zLevel">100%</div>
+      <button id="zIn" title="Zoom +">+</button>
+      <button id="zReset" title="Réinitialiser le zoom">Reset</button>
+    </div>
   </div>
-  <canvas id="board" width="1000" height="1000"></canvas>
-  <div class="palette" id="palette"></div>
+
+  <!-- Palette flottante -->
+  <aside id="paletteDock" aria-label="Palette de couleurs">
+    <h3>Palette</h3>
+    <div class="swRow" id="palette"></div>
+  </aside>
+
+  <!-- Zone de scène zoomable (la palette n'est pas dedans, donc ne zoome pas) -->
+  <div id="stageArea">
+    <div id="stageWrap">
+      <canvas id="board" width="1000" height="1000"></canvas>
+    </div>
+  </div>
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -31,7 +78,7 @@
 
   <script>
   // === 1) Config Firebase (remplace PASTE_ME) ===
-  const firebaseConfig = {
+ const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -61,11 +108,11 @@
   // === 2) Paramètres mosaïque & palette ===
   const W = 100, H = 100, PIX = 10;
 
-  // Palette actuelle + 3 gris (clair/moyen/foncé) + variantes rouges/marrons déjà demandées
+  // Palette actuelle + gris ajoutés + variantes rouges/marrons etc.
   const colors = [
     '#000000', // noir
     '#FFFFFF', // blanc
-   
+
     '#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
     '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
@@ -75,14 +122,17 @@
     '#616161', // gris foncé
 
   ];
-  let selected = 2; // index couleur par défaut (rose vif ici)
+  let selected = 2; // couleur par défaut
 
-  const canvas       = document.getElementById('board');
-  const ctx          = canvas.getContext('2d');
-  const paletteEl    = document.getElementById('palette');
-  const countdownEl  = document.getElementById('countdown');
-  const onlineEl     = document.getElementById('onlineCount');
-  const clickEl      = document.getElementById('clickCount');
+  // Canvas & scène zoomable
+  const canvas      = document.getElementById('board');
+  const ctx         = canvas.getContext('2d');
+  const paletteEl   = document.getElementById('palette');
+  const countdownEl = document.getElementById('countdown');
+  const onlineEl    = document.getElementById('onlineCount');
+  const clickEl     = document.getElementById('clickCount');
+  const stageWrap   = document.getElementById('stageWrap');
+  const zLevelEl    = document.getElementById('zLevel');
 
   // === 3) Helpers dessin ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
@@ -103,16 +153,27 @@
     return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
   }
 
-  // === 5) UI palette + curseur initial ===
-  colors.forEach((c,i)=>{
-    const sw = document.createElement('div');
-    sw.className = 'sw'; sw.style.background = c; sw.title = c;
-    sw.onclick = ()=>{
-      selected = i;
-      canvas.style.cursor = makeColorCursor(colors[selected]);
-    };
-    paletteEl.appendChild(sw);
-  });
+  // === 5) Palette UI (flottante) + curseur initial ===
+  function renderPalette() {
+    paletteEl.innerHTML = '';
+    colors.forEach((c,i)=>{
+      const sw = document.createElement('div');
+      sw.className = 'sw'; sw.style.background = c; sw.title = c;
+      if (i === selected) sw.classList.add('activeSw');
+      sw.onclick = ()=>{
+        selected = i;
+        updateActiveSw();
+        canvas.style.cursor = makeColorCursor(colors[selected]);
+      };
+      paletteEl.appendChild(sw);
+    });
+  }
+  function updateActiveSw() {
+    [...paletteEl.children].forEach((el, idx)=>{
+      el.classList.toggle('activeSw', idx === selected);
+    });
+  }
+  renderPalette();
   canvas.style.cursor = makeColorCursor(colors[selected]);
   canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor = makeColorCursor(colors[selected]); });
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; });
@@ -123,11 +184,23 @@
       e.preventDefault();
       if (e.deltaY > 0) selected = (selected + 1) % colors.length;
       else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
+      updateActiveSw();
       canvas.style.cursor = makeColorCursor(colors[selected]);
     }
   }, { passive: false });
 
-  // === 7) Storage helpers (PNG) ===
+  // === 7) Zoom sur la mosaïque (palette non affectée) ===
+  let zoom = 1; // 1 = 100%
+  function applyZoom() {
+    stageWrap.style.transform = `scale(${zoom})`;
+    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
+  }
+  document.getElementById('zIn').onclick   = ()=>{ zoom = Math.min(4, zoom * 1.25); applyZoom(); };
+  document.getElementById('zOut').onclick  = ()=>{ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); };
+  document.getElementById('zReset').onclick= ()=>{ zoom = 1; applyZoom(); };
+  applyZoom();
+
+  // === 8) Storage helpers (PNG) ===
   function formatParisFilename(prefix="snapshot", ext="png") {
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const parts = fmt.formatToParts(new Date());
@@ -147,7 +220,7 @@
     return { path, url };
   }
 
-  // === 8) Reset & archive coordination ===
+  // === 9) Reset & archive coordination ===
   const PERIOD_RESET   = 48*60*60*1000;  // 48h
   const PERIOD_ARCHIVE = 60*1000;        // 1 min
   const nextResetRef   = db.ref('config/nextResetAt');
@@ -201,12 +274,12 @@
     }
   }
 
-  // === 9) Présence + compteur clics ===
+  // === 10) Présence + compteur clics ===
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
-  const clicksRef        = db.ref('stats/clicksTotal');  // total cumulé
+  const clicksRef        = db.ref('stats/clicksTotal');
 
-  // === 10) Auth + live ===
+  // === 11) Auth + live ===
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
@@ -255,7 +328,7 @@
       drawCell(x,y);
     });
 
-    // Peinture illimitée + incrément du compteur global
+    // Peinture illimitée + incrément du compteur
     canvas.addEventListener('click', async (e)=>{
       const rect = canvas.getBoundingClientRect();
       const x = Math.floor((e.clientX - rect.left)/PIX);
@@ -280,4 +353,3 @@
   </script>
 </body>
 </html>
-
