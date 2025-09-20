@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <!-- Zoom natif désactivé ; pinch géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (zoom centré, scroll borné, Trackeur)</title>
+  <title>Pixel War — 300×300 (zoom centré, Trackeur, Pseudo)</title>
   <style>
     :root{
       --bar-h: 92px;
@@ -24,9 +24,16 @@
       background:#fff;
     }
     body { font-family: system-ui, sans-serif; margin: 16px; padding-bottom: var(--safe-bottom); }
-    h1 { margin: 0 0 8px 0; font-size: 18px; }
+    h1 { margin: 0; font-size: 18px; }
+    .titlebar{ display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap: wrap; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
+
+    /* Bouton Pseudo près du titre */
+    #pseudoBtn{
+      padding: 6px 10px;
+      border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
+    }
 
     /* Viewport scrollable encadré entre le header et la palette */
     #viewport{
@@ -94,6 +101,24 @@
     #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
     #trackerTip .meta{ opacity: .8; }
 
+    /* Modal Pseudo */
+    .modal[hidden]{ display:none; }
+    .modal{ position: fixed; inset: 0; z-index: 30; }
+    .modal-backdrop{ position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+    .modal-card{
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      width: min(420px, calc(100vw - 32px));
+      background:#fff; border:1px solid #ccc; border-radius:12px; padding:16px;
+      box-shadow: 0 12px 28px rgba(0,0,0,.24);
+    }
+    .modal-card h2{ margin:0 0 6px 0; font-size:18px; }
+    .modal-card .hint{ margin:0 0 10px 0; opacity:.75; font-size: 12px; }
+    .modal-card input{
+      width:100%; padding:10px; font-size:16px; border:1px solid #bbb; border-radius:8px;
+    }
+    .modal-actions{ margin-top:12px; display:flex; gap:8px; justify-content:flex-end; }
+    .modal-card .error{ color:#c00; margin-top:8px; min-height: 1.2em; }
+
     /* Boutons palette visibles sur écrans très étroits */
     @media (max-width: 420px){
       #paletteBar{ grid-template-columns: 1fr; }
@@ -107,7 +132,11 @@
   </style>
 </head>
 <body>
-  <h1>Pixel War — 300×300</h1>
+  <div class="titlebar">
+    <h1>Pixel War — 300×300</h1>
+    <button id="pseudoBtn" title="Choisir/Changer mon pseudo">Pseudo</button>
+  </div>
+
   <div class="ui" id="uiBar">
     <div>Prochain reset : <span id="countdown" class="dim">Pause</span></div>
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
@@ -150,6 +179,21 @@
     <span class="meta"></span>
   </div>
 
+  <!-- Modal Pseudo -->
+  <div id="pseudoModal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <h2>Choisir un pseudo</h2>
+      <p class="hint">3–20 caractères, lettres/chiffres/underscore. Unique.</p>
+      <input id="pseudoInput" type="text" placeholder="MonPseudo" maxlength="20" />
+      <div class="modal-actions">
+        <button id="pseudoSave">Enregistrer</button>
+        <button id="pseudoCancel">Annuler</button>
+      </div>
+      <p id="pseudoError" class="error" aria-live="polite"></p>
+    </div>
+  </div>
+
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -158,7 +202,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
- const firebaseConfig = {
+  const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -408,7 +452,7 @@
       const dist = pointersDistance();
       if (dist > 0 && pinchStartDist > 0){
         const factor = dist / pinchStartDist;
-        const eased = Math.pow(factor, 0.85);
+        a = 1; const eased = Math.pow(factor, 0.85);
         const newZoom = clampZoom(pinchStartZoom * eased);
         setZoomCentered(newZoom);
         e.preventDefault();
@@ -443,18 +487,93 @@
   }
   function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
 
+  // Cache pseudos
+  const namesByUid = {};   // uid -> pseudo
+  let myName = null;
+
+  // Pseudo UI
+  const pseudoBtn    = document.getElementById('pseudoBtn');
+  const pseudoModal  = document.getElementById('pseudoModal');
+  const pseudoInput  = document.getElementById('pseudoInput');
+  const pseudoSave   = document.getElementById('pseudoSave');
+  const pseudoCancel = document.getElementById('pseudoCancel');
+  const pseudoError  = document.getElementById('pseudoError');
+
+  function openPseudoModal(){
+    pseudoError.textContent = '';
+    pseudoInput.value = myName || '';
+    pseudoModal.hidden = false;
+    setTimeout(()=> pseudoInput.focus(), 0);
+  }
+  function closePseudoModal(){ pseudoModal.hidden = true; }
+  pseudoBtn.addEventListener('click', openPseudoModal);
+  pseudoCancel.addEventListener('click', closePseudoModal);
+  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoModal);
+  pseudoInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') savePseudo(); });
+
+  function normalizeName(s){ return s.trim(); }
+  function toKey(s){ return s.toLowerCase().replace(/[^a-z0-9_]/g,''); }
+  function isValidName(s){ return /^[A-Za-z0-9_]{3,20}$/.test(s); }
+
+  function ensureName(uid){
+    if (!uid || namesByUid[uid]) return;
+    db.ref(`users/${uid}/name`).once('value').then(s=>{
+      const n = s.val();
+      if (n && typeof n === 'string') namesByUid[uid] = n;
+    }).catch(()=>{});
+  }
+
+  async function savePseudo(){
+    try {
+      const raw = normalizeName(pseudoInput.value);
+      if (!isValidName(raw)){ pseudoError.textContent = "Pseudo invalide (3–20 caractères, lettres/chiffres/_)."; return; }
+      const key = toKey(raw);
+      if (!key){ pseudoError.textContent = "Pseudo invalide."; return; }
+      if (!CURRENT_UID){ pseudoError.textContent = "Authentification en cours… réessaie."; return; }
+
+      const prevSnap = await db.ref(`users/${CURRENT_UID}/name`).once('value');
+      const prevName = prevSnap.val();
+      const prevKey  = prevName ? toKey(prevName) : null;
+      if (prevName && prevName === raw){ pseudoError.textContent = ""; closePseudoModal(); return; }
+
+      const refClaim = db.ref(`users_by_name/${key}`);
+      const tx = await refClaim.transaction(cur => {
+        if (cur === null || cur === CURRENT_UID) { return CURRENT_UID; }
+        return;
+      });
+      if (!tx.committed || tx.snapshot.val() !== CURRENT_UID){
+        pseudoError.textContent = "Ce pseudo est déjà pris.";
+        return;
+      }
+
+      await db.ref(`users/${CURRENT_UID}/name`).set(raw);
+
+      if (prevKey && prevKey !== key){
+        const refOld = db.ref(`users_by_name/${prevKey}`);
+        await refOld.transaction(cur => (cur === CURRENT_UID ? null : cur));
+      }
+
+      myName = raw;
+      namesByUid[CURRENT_UID] = raw;
+      closePseudoModal();
+    } catch (err){
+      console.error(err);
+      pseudoError.textContent = "Erreur réseau. Réessaie.";
+    }
+  }
+  pseudoSave.addEventListener('click', savePseudo);
+
   function updateTracker(e){
     if (!trackerOn) return;
     const {x,y} = screenToGrid(e.clientX, e.clientY);
     if (x>=0 && x<W && y>=0 && y<H){
       trackerXY.textContent = `(${x}, ${y})`;
       const uid = authorGrid[y][x];
+      const display = uid ? (namesByUid[uid] || uidShort(uid)) : '—';
       const when = tsGrid[y][x];
-      const who = uid ? `par ${uidShort(uid)}` : '—';
       const ago = when ? `, ${timeAgoFR(when)}` : '';
-      trackerMeta.textContent = `${who}${ago}`;
+      trackerMeta.textContent = `${display}${ago}`;
       trackerTip.style.display = 'block';
-      // positionner près du pointeur
       const offsetX = 14, offsetY = 18;
       let tx = e.clientX + offsetX, ty = e.clientY - offsetY;
       const rect = trackerTip.getBoundingClientRect();
@@ -533,6 +652,15 @@
     if (!user) return;
     CURRENT_UID = user.uid;
 
+    // Charger et suivre mon pseudo ; ouvrir le modal si absent
+    db.ref(`users/${CURRENT_UID}/name`).on('value', s=>{
+      const n = s.val();
+      myName = (typeof n === 'string' && n) ? n : null;
+      if (myName) namesByUid[CURRENT_UID] = myName;
+      // Auto-popup si aucun pseudo défini
+      if (!myName) openPseudoModal();
+    });
+
     const myPresenceRef = presenceRootRef.child(user.uid);
     infoConnectedRef.on('value', snap => {
       if (snap.val() === true) {
@@ -566,6 +694,7 @@
             grid[y][x] = col;
             authorGrid[y][x] = v.author || null;
             tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+            if (v.author) ensureName(v.author);
           }
         }
         fullPixels(); if (showGridChk.checked) drawGridOverlay();
@@ -591,6 +720,7 @@
         grid[y][x] = col;
         authorGrid[y][x] = v.author || null;
         tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+        if (v.author) ensureName(v.author);
         drawCell(x,y); queueOverlay();
       }
     });
@@ -602,6 +732,7 @@
         grid[y][x] = col;
         authorGrid[y][x] = v.author || null;
         tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+        if (v.author) ensureName(v.author);
         drawCell(x,y); queueOverlay();
       }
     });
