@@ -1,208 +1,196 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <!-- Zoom natif désactivé ; pinch géré par l’app -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (zoom centré, Trackeur, Pseudo)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Le Grand Gribidouillage</title>
+  <!--
+    ⚠️ À faire côté projet Firebase :
+      1) Renseigne le firebaseConfig ci-dessous.
+      2) Activer Authentification → Connexion anonyme.
+      3) Storage Rules : autoriser l'écriture pour users anonymes (ou ajuster).
+      4) Database Rules : (on ajoutera les règles sécurisées avec users/users_by_name séparément).
+  -->
+
   <style>
-    :root{
-      --bar-h: 92px;
-      --bar-pad: 10px;
-      --gap: 8px;
-      --sw: 28px;
-      --cols: 14;
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-top: env(safe-area-inset-top, 0px);
+    :root {
+      --bg: #1f1f1f;
+      --panel: #2a2a2a;
+      --text: #f0f0f0;
+      --muted: #a5a5a5;
+      --accent: #00d2ff;
+      --danger: #ff4d4f;
+      --grid: rgba(0,0,0,0.2);
+      --border: #444;
     }
+
     * { box-sizing: border-box; }
-    html, body {
-      height: 100dvh;               /* corrige la “barre blanche” sur Android/OnePlus */
-      min-height: 100dvh;
-      height: -webkit-fill-available; /* fallback iOS */
-      overflow: hidden;
-      background:#fff;
-    }
-    body { font-family: system-ui, sans-serif; margin: 16px; padding-bottom: var(--safe-bottom); }
-    h1 { margin: 0; font-size: 18px; }
-    .titlebar{ display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap: wrap; }
-    .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
-    .dim { opacity:.7 }
-
-    /* Bouton Pseudo près du titre */
-    #pseudoBtn{
-      padding: 6px 10px;
-      border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow: hidden; /* Pas de scroll page, on gère le pan/zoom nous-mêmes */
+      user-select: none;
     }
 
-    /* Viewport scrollable encadré entre le header et la palette */
-    #viewport{
-      position: fixed; left: 0; right: 0;
-      overflow: auto; overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;           /* sera mis à none pendant le pinch interne */
-      background: #fff; z-index: 1;
+    /* ===== HUD top-center ===== */
+    #hud {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      background: rgba(0,0,0,0.5);
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      z-index: 20;
+      backdrop-filter: blur(4px);
+    }
+    #hud .swatch {
+      width: 16px; height: 16px; border-radius: 4px; border: 1px solid #000;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.2) inset;
+      display: inline-block; vertical-align: middle;
     }
 
-    /* Contenu scrollable : sizer = taille réelle après zoom */
-    #space{ position: relative; }
-    #sizer{ width: 1px; height: 1px; }     /* dimensions ajustées par JS */
-
-    /* Scène */
-    #stageWrap{
+    /* ===== Viewport/stage ===== */
+    #viewport {
+      position: fixed;
+      inset: 0; /* plein écran */
+      overflow: hidden; /* interdit toute fuite hors écran */
+      background: #ffffff; /* couleur de fond quand pas peint */
+      z-index: 1;
+      cursor: crosshair; /* remplacé dynamiquement par un curseur coloré */
+    }
+    /* Le stage contient nos canvases et subit les transforms */
+    #stage {
       position: absolute; top: 0; left: 0;
-      display:inline-block;
-      transform-origin: top left;
-      transition: transform 120ms ease-out; /* fluidité du zoom */
+      transform-origin: 0 0; /* important pour les maths */
+      will-change: transform;
     }
-    #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette bas (2 lignes) + boutons +/− empilés (ou dessous en mobile étroit) */
-    #paletteBar{
-      position: fixed; left: 50%; transform: translateX(-50%);
-      bottom: calc(8px + var(--safe-bottom));
-      max-width: min(100vw - 16px, 1100px);
-      padding: var(--bar-pad);
-      border:1px solid #333; border-radius:14px; background:#fff;
-      box-shadow: 0 6px 18px rgba(0,0,0,.14);
-      display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; z-index:10;
+    /* Deux canvases superposés pour séparer dessin et grille */
+    canvas { display: block; image-rendering: pixelated; }
+    #paintCanvas, #gridCanvas {
+      position: absolute; top: 0; left: 0;
     }
-    #paletteGrid{
-      display:grid; grid-auto-flow: row dense;
-      grid-template-columns: repeat(var(--cols), var(--sw));
-      grid-auto-rows: var(--sw);
-      row-gap: var(--gap); column-gap: var(--gap); place-items:center;
-    }
-    .sw{ width:var(--sw); height:var(--sw); border:1px solid #000; border-radius:6px; cursor:pointer; }
-    .activeSw{ outline:2px solid #000; outline-offset:2px; }
 
-    .dockZoom{ display:flex; flex-direction:column; gap:6px; align-items:center; justify-content:center; }
-    .dockZoom button{ width:36px; height:28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; font-size:16px; line-height:1; }
-
-    .zoomControls{ display:flex; gap:8px; align-items:center; }
-    .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
-    .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
-    .toggle{ display:flex; gap:6px; align-items:center; }
-
-    /* Tip flottant (Trackeur) */
-    #trackerTip{
-      position: fixed; z-index: 20;
-      pointer-events: none;
-      background: rgba(255,255,255,0.96);
-      border: 1px solid rgba(0,0,0,0.25);
-      border-radius: 8px;
-      padding: 6px 8px;
-      font-size: 12px;
-      box-shadow: 0 6px 18px rgba(0,0,0,.12);
-      transform: translate(-50%, -120%);
-      display: none;
-      white-space: nowrap;
+    /* ===== Toolbar bottom-center ===== */
+    #toolbar {
+      position: fixed;
+      left: 50%;
+      bottom: 12px;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      z-index: 30;
     }
-    #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
-    #trackerTip .meta{ opacity: .8; }
 
-    /* Modal Pseudo */
-    .modal[hidden]{ display:none; }
-    .modal{ position: fixed; inset: 0; z-index: 30; }
-    .modal-backdrop{ position: absolute; inset: 0; background: rgba(0,0,0,.35); }
-    .modal-card{
-      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-      width: min(420px, calc(100vw - 32px));
-      background:#fff; border:1px solid #ccc; border-radius:12px; padding:16px;
-      box-shadow: 0 12px 28px rgba(0,0,0,.24);
+    .palette {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 32px);
+      grid-auto-rows: 32px;
+      gap: 6px;
+      padding: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: min(92vw, 640px); /* 2 lignes max recommandé */
     }
-    .modal-card h2{ margin:0 0 6px 0; font-size:18px; }
-    .modal-card .hint{ margin:0 0 10px 0; opacity:.75; font-size: 12px; }
-    .modal-card input{
-      width:100%; padding:10px; font-size:16px; border:1px solid #bbb; border-radius:8px;
+    .color {
+      width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+      border: 2px solid #333; box-shadow: 0 1px 2px rgba(0,0,0,0.3);
     }
-    .modal-actions{ margin-top:12px; display:flex; gap:8px; justify-content:flex-end; }
-    .modal-card .error{ color:#c00; margin-top:8px; min-height: 1.2em; }
+    .color.selected { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; }
 
-    /* Boutons palette visibles sur écrans très étroits */
-    @media (max-width: 420px){
-      #paletteBar{ grid-template-columns: 1fr; }
-      .dockZoom{ flex-direction: row; }
+    #zoomCol {
+      display: flex; flex-direction: column; gap: 6px;
+      width: 140px; align-items: stretch;
     }
-    @media (max-width: 480px){
-      :root{ --gap: 6px; }
-      body{ margin: 12px; }
-      .dockZoom button{ width: 32px; height: 26px; font-size: 15px; }
+    button.btn {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 700; font-size: 14px;
+      cursor: pointer;
+      transition: transform .05s ease, background .2s ease;
+    }
+    button.btn:hover { background: #343434; }
+    button.btn:active { transform: translateY(1px); }
+
+    .row { display: flex; gap: 8px; }
+    .center { justify-content: center; }
+
+    /* Indications en bas */
+    #hints { font-size: 12px; color: var(--muted); text-align: center; }
+
+    /* Mode Pan (Main) visuel */
+    .pan-cursor { cursor: grab !important; }
+    .panning .pan-cursor { cursor: grabbing !important; }
+
+    /* Toast simple */
+    #toast {
+      position: fixed; right: 12px; bottom: 12px; z-index: 40;
+      background: rgba(0,0,0,.7); color: #fff; padding: 10px 12px;
+      border-radius: 10px; border: 1px solid var(--border); display: none;
     }
   </style>
 </head>
 <body>
-  <div class="titlebar">
-    <h1>Pixel War — 300×300</h1>
-    <button id="pseudoBtn" title="Choisir/Changer mon pseudo">Pseudo</button>
+  <!-- ===== HUD (infos en haut) ===== -->
+  <div id="hud">
+    <span>Coords: <strong id="coords">0,0</strong></span>
+    <span>Connectés: <strong id="connected">0</strong></span>
+    <span>Clics: <strong id="clicks">0</strong></span>
+    <span>Couleur: <span id="swatch" class="swatch" style="background:#000"></span></span>
   </div>
 
-  <div class="ui" id="uiBar">
-    <div>Prochain reset : <span id="countdown" class="dim">Pause</span></div>
-    <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
-    <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
-    <div>Coordonnées : <span id="coords" class="dim">—</span></div>
-    <div class="zoomControls">
-      <button id="zOut"  title="Zoom -">−</button>
-      <div class="level" id="zLevel">100%</div>
-      <button id="zIn"   title="Zoom +">+</button>
-      <button id="zReset" title="Réinitialiser le zoom">Reset</button>
-      <button id="trackerToggle" title="Activer/Désactiver le menu flottant Trackeur">Trackeur</button>
-    </div>
-    <label class="toggle" title="Afficher/masquer la grille">
-      <input type="checkbox" id="showGridChk"> Grille
-    </label>
-  </div>
-
-  <!-- Viewport scrollable borné -->
+  <!-- ===== Viewport + Stage (canvases) ===== -->
   <div id="viewport">
-    <div id="space">
-      <div id="sizer"></div>
-      <div id="stageWrap">
-        <canvas id="board"></canvas>
-      </div>
+    <div id="stage">
+      <canvas id="paintCanvas"></canvas>
+      <canvas id="gridCanvas"></canvas>
     </div>
   </div>
 
-  <!-- Palette bas : grille 2 lignes + boutons -->
-  <aside id="paletteBar" aria-label="Palette de couleurs">
-    <div id="paletteGrid" aria-label="Couleurs"></div>
-    <div class="dockZoom">
-      <button id="dockZIn"  title="Zoom +">+</button>
-      <button id="dockZOut" title="Zoom -">−</button>
+  <!-- ===== Toolbar ===== -->
+  <div id="toolbar">
+    <div id="palette" class="palette" aria-label="Palette de couleurs"></div>
+    <div id="zoomCol">
+      <button id="zoomIn" class="btn" aria-label="Zoom avant">Zoom +</button>
+      <button id="zoomOut" class="btn" aria-label="Zoom arrière">Zoom −</button>
+      <button id="toggleGrid" class="btn" aria-label="Afficher / cacher la grille">Grille ON/OFF</button>
+      <button id="togglePan" class="btn" aria-label="Basculer en mode déplacement">Mode Main</button>
     </div>
-  </aside>
-
-  <!-- Tip flottant Trackeur -->
-  <div id="trackerTip" role="status" aria-live="polite">
-    <span class="xy">(—, —)</span>
-    <span class="meta"></span>
+    <div id="hints">Astuce : <strong>Shift + molette</strong> pour changer de couleur • <strong>Cliquer</strong> pour peindre</div>
   </div>
 
-  <!-- Modal Pseudo -->
-  <div id="pseudoModal" class="modal" hidden>
-    <div class="modal-backdrop"></div>
-    <div class="modal-card">
-      <h2>Choisir un pseudo</h2>
-      <p class="hint">3–20 caractères, lettres/chiffres/underscore. Unique.</p>
-      <input id="pseudoInput" type="text" placeholder="MonPseudo" maxlength="20" />
-      <div class="modal-actions">
-        <button id="pseudoSave">Enregistrer</button>
-        <button id="pseudoCancel">Annuler</button>
-      </div>
-      <p id="pseudoError" class="error" aria-live="polite"></p>
-    </div>
-  </div>
+  <!-- Toast (feedback) -->
+  <div id="toast"></div>
 
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <!-- ===== App Script (ESM) ===== -->
+  <script type="module">
+    /*********************************************************
+     * 🔥 Firebase
+     *********************************************************/
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getDatabase, ref, set, onValue, serverTimestamp, push, onDisconnect,
+      onChildAdded, onChildChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getStorage, ref as sRef, uploadBytes } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
-  <script>
-  // === Config Firebase (remplace PASTE_ME) ===
-  const firebaseConfig = {
+   const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -222,579 +210,397 @@
 
 };
 
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db   = firebase.database();
-  const storage = firebase.storage();
 
-  // === Paramètres mosaïque ===
-  const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const W = 300, H = 300;
-  let PIX = IS_MOBILE ? 8 : 10; // plus léger sur mobile
-  const canvas = document.getElementById('board');
-  canvas.width  = W * PIX;
-  canvas.height = H * PIX;
-  const ctx = canvas.getContext('2d');
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
 
-  // === Palette (ordre + rouge + 3 peaux) ===
-  const colors = [
-    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
-    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-    '#E0E0E0','#9E9E9E','#616161',
-    '#FF0000', '#FFDBAC', '#F1C27D', '#E0AC69'
-  ];
-  let selected = 0;
+    // Auth anonyme (nécessaire pour Storage si règles l'exigent)
+    signInAnonymously(auth).catch((e) => console.warn("Auth anonyme échouée:", e));
 
-  // === Références DOM ===
-  const viewport   = document.getElementById('viewport');
-  const sizer      = document.getElementById('sizer');
-  const stageWrap  = document.getElementById('stageWrap');
-  const paletteGrid= document.getElementById('paletteGrid');
-  const paletteBar = document.getElementById('paletteBar');
-  const uiBar      = document.getElementById('uiBar');
-  const countdownEl= document.getElementById('countdown');
-  const onlineEl   = document.getElementById('onlineCount');
-  const clickEl    = document.getElementById('clickCount');
-  const coordsEl   = document.getElementById('coords');
-  const zLevelEl   = document.getElementById('zLevel');
-  const showGridChk= document.getElementById('showGridChk');
-  const trackerToggle = document.getElementById('trackerToggle');
-  const trackerTip = document.getElementById('trackerTip');
-  const trackerXY  = trackerTip.querySelector('.xy');
-  const trackerMeta= trackerTip.querySelector('.meta');
+    /*********************************************************
+     * ⚙️ Paramètres & éléments DOM
+     *********************************************************/
+    const GRID_W = 300, GRID_H = 300; // grille carrée
+    const PIX = window.innerWidth < 768 ? 8 : 10; // mobile/desktop
 
-  // === Trackeur (état mémorisé) ===
-  let trackerOn = (localStorage.getItem('pw-tracker') ?? '1') === '1';
-  function updateTrackerToggleUI(){
-    trackerToggle.classList.toggle('active', trackerOn);
-    trackerToggle.style.background = trackerOn ? '#000' : '';
-    trackerToggle.style.color = trackerOn ? '#fff' : '';
-  }
-  trackerToggle.addEventListener('click', ()=>{
-    trackerOn = !trackerOn;
-    localStorage.setItem('pw-tracker', trackerOn ? '1' : '0');
-    updateTrackerToggleUI();
-    if (!trackerOn) trackerTip.style.display = 'none';
-  });
-  updateTrackerToggleUI();
+    const viewport = document.getElementById('viewport');
+    const stage = document.getElementById('stage');
+    const paintCanvas = document.getElementById('paintCanvas');
+    const gridCanvas = document.getElementById('gridCanvas');
+    const pctx = paintCanvas.getContext('2d');
+    const gctx = gridCanvas.getContext('2d');
 
-  // === Layout : viewport borné entre le header et la palette ===
-  function layoutViewport(){
-    const uiRect  = uiBar.getBoundingClientRect();
-    const palRect = paletteBar.getBoundingClientRect();
-    const vv = window.visualViewport;
-    const screenH = vv ? vv.height : window.innerHeight;
-    const safeBtm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0;
-    const bottomSpace = Math.round((screenH - palRect.top) + 8 + safeBtm);
-    viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
-    viewport.style.bottom = bottomSpace + 'px';
-  }
+    const coordsEl = document.getElementById('coords');
+    const connEl = document.getElementById('connected');
+    const clicksEl = document.getElementById('clicks');
+    const swatchEl = document.getElementById('swatch');
 
-  // === Grilles mémoire ===
-  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // couleur
-  const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // uid
-  const tsGrid     = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // timestamp
+    const paletteDiv = document.getElementById('palette');
+    const toastEl = document.getElementById('toast');
 
-  function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
-  function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
+    // Taille logique des canvases (non scalée) = grille * PIX
+    const CANVAS_W = GRID_W * PIX;
+    const CANVAS_H = GRID_H * PIX;
+    paintCanvas.width = CANVAS_W; paintCanvas.height = CANVAS_H;
+    gridCanvas.width = CANVAS_W; gridCanvas.height = CANVAS_H;
 
-  // Grille overlay
-  function drawGridOverlay() {
-    const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
-    ctx.save(); ctx.lineWidth = 1;
+    // Stage dimension (s'aligne aux canvases)
+    stage.style.width = CANVAS_W + 'px';
+    stage.style.height = CANVAS_H + 'px';
 
-    ctx.beginPath(); ctx.strokeStyle = thin;
-    for (let x=0; x<=W; x++){
-      const xx = x*PIX + 0.5;
-      if (x % 10 === 0) {
-        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
-        ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = thin;
-      } else { ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); }
-    }
-    ctx.stroke();
+    /*********************************************************
+     * 🎨 Palette & curseur coloré
+     *********************************************************/
+    const BASE_PALETTE = [
+      "#000000", "#FFFFFF", "#FF0000",
+      "#FFDBAC", "#F1C27D", "#E0AC69", // 3 teintes peau
+      "#FF9900", "#FFFF00", "#00FF00",
+      "#00FFFF", "#0000FF", "#9900FF",
+      "#FF00FF", "#808080", "#964B00"
+    ];
 
-    ctx.beginPath(); ctx.strokeStyle = thin;
-    for (let y=0; y<=H; y++){
-      const yy = y*PIX + 0.5;
-      if (y % 10 === 0) {
-        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
-        ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = thin;
-      } else { ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); }
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
+    let palette = [...BASE_PALETTE];
+    let colorIndex = 0;
+    let currentColor = palette[colorIndex];
 
-  // Rendu initial
-  fullPixels();
-  if (localStorage.getItem('pw-show-grid') === '1') { showGridChk.checked = true; drawGridOverlay(); }
-  else { showGridChk.checked = false; }
-  showGridChk.addEventListener('change', ()=>{
-    localStorage.setItem('pw-show-grid', showGridChk.checked ? '1' : '0');
-    fullPixels(); if (showGridChk.checked) drawGridOverlay();
-  });
-
-  // Curseur coloré
-  function makeColorCursor(hex, size = 22) {
-    const r = Math.floor(size/2) - 2;
-    const svg =
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>` +
-        `<circle cx='${size/2}' cy='${size/2}' r='${r}' fill='${hex}'/>` +
-        `<circle cx='${size/2}' cy='${size/2}' r='${r-0.5}' fill='none' stroke='white' stroke-width='2'/>` +
-        `<circle cx='${size/2}' cy='${size/2}' r='${r-2.5}' fill='none' stroke='black' stroke-width='1.5'/>` +
-      `</svg>`;
-    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
-  }
-  function updateCursor(){ canvas.style.cursor = makeColorCursor(colors[selected]); }
-  canvas.addEventListener('mouseenter', updateCursor);
-  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; trackerTip.style.display='none'; });
-
-  // Palette 2 lignes
-  function buildPalette(){
-    paletteGrid.innerHTML = '';
-    colors.forEach((c,i)=>{
-      const sw = document.createElement('div');
-      sw.className = 'sw'; sw.style.background = c; sw.title = c;
-      if (i===selected) sw.classList.add('activeSw');
-      sw.onclick = ()=>{
-        selected = i;
-        [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
-        sw.classList.add('activeSw');
-        updateCursor();
-      };
-      paletteGrid.appendChild(sw);
-    });
-  }
-  function layoutPaletteTwoRows(){
-    const total = colors.length, cols = Math.ceil(total/2);
-    const bar = paletteBar, btns = bar.querySelector('.dockZoom');
-    const barRect = bar.getBoundingClientRect(), btnRect = btns.getBoundingClientRect();
-    const pad = 2*parseFloat(getComputedStyle(bar).paddingLeft);
-    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
-    const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
-    const sw = Math.floor((available - gap*(cols-1)) / cols);
-    const minSw = 18, maxSw = IS_MOBILE ? 28 : 32;
-    const clamped = Math.max(minSw, Math.min(maxSw, sw));
-    bar.style.setProperty('--cols', cols);
-    bar.style.setProperty('--sw', clamped + 'px');
-    const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
-    const barH = (clamped*2) + gap + barPad;
-    document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
-  }
-
-  // ===== Scroll borné (taille réelle = W*PIX*zoom) =====
-  function updateSizer(){
-    const scaledW = W * PIX * zoom, scaledH = H * PIX * zoom;
-    sizer.style.width  = Math.ceil(scaledW) + 'px';
-    sizer.style.height = Math.ceil(scaledH) + 'px';
-  }
-  function clampScroll(){
-    const maxLeft = Math.max(0, sizer.offsetWidth  - viewport.clientWidth );
-    const maxTop  = Math.max(0, sizer.offsetHeight - viewport.clientHeight);
-    if (viewport.scrollLeft < 0) viewport.scrollLeft = 0;
-    else if (viewport.scrollLeft > maxLeft) viewport.scrollLeft = maxLeft;
-    if (viewport.scrollTop < 0) viewport.scrollTop = 0;
-    else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
-  }
-
-  // ========= Zoom (centré & doux) =========
-  let zoom = 1;
-  const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
-  function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
-  function applyZoom(){
-    stageWrap.style.transform = `scale(${zoom})`;
-    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
-    updateSizer();
-  }
-  function setZoomCentered(newZoom){
-    const vp = viewport;
-    const logicalCX = (vp.scrollLeft + vp.clientWidth/2) / zoom;
-    const logicalCY = (vp.scrollTop  + vp.clientHeight/2) / zoom;
-    zoom = clampZoom(newZoom);
-    applyZoom();
-    vp.scrollLeft = logicalCX * zoom - vp.clientWidth/2;
-    vp.scrollTop  = logicalCY * zoom - vp.clientHeight/2;
-    clampScroll();
-  }
-  function zoomIn(){  setZoomCentered(clampZoom(zoom * ZOOM_STEP)); }
-  function zoomOut(){ setZoomCentered(clampZoom(zoom / ZOOM_STEP)); }
-  document.getElementById('zIn').onclick = zoomIn;
-  document.getElementById('zOut').onclick = zoomOut;
-  document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); clampScroll(); };
-  document.getElementById('dockZIn').onclick  = zoomIn;
-  document.getElementById('dockZOut').onclick = zoomOut;
-
-  // ====== Pinch-to-zoom (centré & adouci) ======
-  const activePointers = new Map();
-  let pinchStartDist = 0, pinchStartZoom = 1, pinchInProgress = false;
-  function pointersDistance(){
-    const arr = [...activePointers.values()];
-    if (arr.length < 2) return 0;
-    const dx = arr[0].x - arr[1].x, dy = arr[0].y - arr[1].y;
-    return Math.hypot(dx, dy);
-  }
-  function setTouchActionDuringPinch(on){ viewport.style.touchAction = on ? 'none' : 'pan-x pan-y'; }
-  viewport.addEventListener('pointerdown', (e)=>{
-    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (activePointers.size === 2){
-      pinchInProgress = true; pinchStartDist = pointersDistance(); pinchStartZoom = zoom;
-      setTouchActionDuringPinch(true); e.preventDefault();
-    }
-  }, { passive:false });
-  viewport.addEventListener('pointermove', (e)=>{
-    if (!activePointers.has(e.pointerId)) return;
-    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinchInProgress && activePointers.size >= 2){
-      const dist = pointersDistance();
-      if (dist > 0 && pinchStartDist > 0){
-        const factor = dist / pinchStartDist;
-        a = 1; const eased = Math.pow(factor, 0.85);
-        const newZoom = clampZoom(pinchStartZoom * eased);
-        setZoomCentered(newZoom);
-        e.preventDefault();
-      }
-    }
-  }, { passive:false });
-  function endPointer(e){
-    if (activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
-    if (activePointers.size < 2 && pinchInProgress){
-      pinchInProgress = false; setTouchActionDuringPinch(false); clampScroll();
-    }
-  }
-  viewport.addEventListener('pointerup', endPointer, { passive:true });
-  viewport.addEventListener('pointercancel', endPointer, { passive:true });
-  viewport.addEventListener('pointerleave', endPointer, { passive:true });
-
-  // === Coordonnées + Trackeur ===
-  function screenToGrid(clientX, clientY){
-    const rect = canvas.getBoundingClientRect();
-    const localX = (clientX - rect.left) / zoom;
-    const localY = (clientY - rect.top)  / zoom;
-    const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
-    return { x, y };
-  }
-  function timeAgoFR(ts){
-    if (!ts) return '';
-    const s = Math.max(1, Math.floor((Date.now() - ts)/1000));
-    if (s < 60) return `il y a ${s}s`;
-    const m = Math.floor(s/60); if (m < 60) return `il y a ${m} min`;
-    const h = Math.floor(m/60); if (h < 24) return `il y a ${h} h`;
-    const d = Math.floor(h/24); return `il y a ${d} j`;
-  }
-  function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
-
-  // Cache pseudos
-  const namesByUid = {};   // uid -> pseudo
-  let myName = null;
-
-  // Pseudo UI
-  const pseudoBtn    = document.getElementById('pseudoBtn');
-  const pseudoModal  = document.getElementById('pseudoModal');
-  const pseudoInput  = document.getElementById('pseudoInput');
-  const pseudoSave   = document.getElementById('pseudoSave');
-  const pseudoCancel = document.getElementById('pseudoCancel');
-  const pseudoError  = document.getElementById('pseudoError');
-
-  function openPseudoModal(){
-    pseudoError.textContent = '';
-    pseudoInput.value = myName || '';
-    pseudoModal.hidden = false;
-    setTimeout(()=> pseudoInput.focus(), 0);
-  }
-  function closePseudoModal(){ pseudoModal.hidden = true; }
-  pseudoBtn.addEventListener('click', openPseudoModal);
-  pseudoCancel.addEventListener('click', closePseudoModal);
-  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoModal);
-  pseudoInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') savePseudo(); });
-
-  function normalizeName(s){ return s.trim(); }
-  function toKey(s){ return s.toLowerCase().replace(/[^a-z0-9_]/g,''); }
-  function isValidName(s){ return /^[A-Za-z0-9_]{3,20}$/.test(s); }
-
-  function ensureName(uid){
-    if (!uid || namesByUid[uid]) return;
-    db.ref(`users/${uid}/name`).once('value').then(s=>{
-      const n = s.val();
-      if (n && typeof n === 'string') namesByUid[uid] = n;
-    }).catch(()=>{});
-  }
-
-  async function savePseudo(){
-    try {
-      const raw = normalizeName(pseudoInput.value);
-      if (!isValidName(raw)){ pseudoError.textContent = "Pseudo invalide (3–20 caractères, lettres/chiffres/_)."; return; }
-      const key = toKey(raw);
-      if (!key){ pseudoError.textContent = "Pseudo invalide."; return; }
-      if (!CURRENT_UID){ pseudoError.textContent = "Authentification en cours… réessaie."; return; }
-
-      const prevSnap = await db.ref(`users/${CURRENT_UID}/name`).once('value');
-      const prevName = prevSnap.val();
-      const prevKey  = prevName ? toKey(prevName) : null;
-      if (prevName && prevName === raw){ pseudoError.textContent = ""; closePseudoModal(); return; }
-
-      const refClaim = db.ref(`users_by_name/${key}`);
-      const tx = await refClaim.transaction(cur => {
-        if (cur === null || cur === CURRENT_UID) { return CURRENT_UID; }
-        return;
+    function renderPalette() {
+      paletteDiv.innerHTML = '';
+      palette.forEach((c, i) => {
+        const d = document.createElement('div');
+        d.className = 'color' + (i === colorIndex ? ' selected' : '');
+        d.style.background = c;
+        d.title = c;
+        d.addEventListener('click', () => setColorIndex(i));
+        paletteDiv.appendChild(d);
       });
-      if (!tx.committed || tx.snapshot.val() !== CURRENT_UID){
-        pseudoError.textContent = "Ce pseudo est déjà pris.";
-        return;
-      }
-
-      await db.ref(`users/${CURRENT_UID}/name`).set(raw);
-
-      if (prevKey && prevKey !== key){
-        const refOld = db.ref(`users_by_name/${prevKey}`);
-        await refOld.transaction(cur => (cur === CURRENT_UID ? null : cur));
-      }
-
-      myName = raw;
-      namesByUid[CURRENT_UID] = raw;
-      closePseudoModal();
-    } catch (err){
-      console.error(err);
-      pseudoError.textContent = "Erreur réseau. Réessaie.";
-    }
-  }
-  pseudoSave.addEventListener('click', savePseudo);
-
-  function updateTracker(e){
-    if (!trackerOn) return;
-    const {x,y} = screenToGrid(e.clientX, e.clientY);
-    if (x>=0 && x<W && y>=0 && y<H){
-      trackerXY.textContent = `(${x}, ${y})`;
-      const uid = authorGrid[y][x];
-      const display = uid ? (namesByUid[uid] || uidShort(uid)) : '—';
-      const when = tsGrid[y][x];
-      const ago = when ? `, ${timeAgoFR(when)}` : '';
-      trackerMeta.textContent = `${display}${ago}`;
-      trackerTip.style.display = 'block';
-      const offsetX = 14, offsetY = 18;
-      let tx = e.clientX + offsetX, ty = e.clientY - offsetY;
-      const rect = trackerTip.getBoundingClientRect();
-      if (tx + rect.width > window.innerWidth - 6) tx = window.innerWidth - rect.width - 6;
-      if (ty - rect.height < 6) ty = e.clientY + offsetY;
-      trackerTip.style.left = tx + 'px';
-      trackerTip.style.top  = ty + 'px';
-    } else {
-      trackerTip.style.display = 'none';
-    }
-  }
-
-  canvas.addEventListener('mousemove', (e)=>{
-    const {x,y} = screenToGrid(e.clientX, e.clientY);
-    coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
-    updateTracker(e);
-  });
-  // support tactile : suivre le doigt
-  canvas.addEventListener('pointermove', (e)=>{
-    if (e.pointerType === 'touch') updateTracker(e);
-  });
-  canvas.addEventListener('pointerleave', ()=>{ trackerTip.style.display='none'; });
-
-  // Storage helpers (PNG)
-  function formatParisFilename(prefix="snapshot", ext="png"){
-    const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-    const parts = fmt.formatToParts(new Date());
-    const get=t=>parts.find(p=>p.type===t)?.value||'';
-    const stamp = `${get('year')}-${get('month')}-${get('day')}_${get('hour')}-${get('minute')}-${get('second')}`;
-    return `${prefix}_${stamp}.${ext}`;
-  }
-  function canvasToBlobPNG(cnv){ return new Promise(res => cnv.toBlob(b => res(b), 'image/png')); }
-  async function uploadSnapshot(folder, filename){
-    await new Promise(r => requestAnimationFrame(r));
-    const blob = await canvasToBlobPNG(canvas);
-    const path = `${folder}/${filename}`;
-    const ref = storage.ref().child(path);
-    await ref.put(blob, { contentType: 'image/png' });
-    const url = await ref.getDownloadURL();
-    console.log('Snapshot uploadé →', path, url);
-    return { path, url };
-  }
-
-  // Reset & archive ——— PAUSE DU RESET ———
-  const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
-  const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
-  const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
-  function updateCountdown(ts){ countdownEl.textContent = 'Pause'; }
-  async function tryReset(){ return; }
-  async function tryArchive(){
-    const now=Date.now(); let commit=false, newNext=null;
-    const res = await nextArchRef.transaction(cur => {
-      if (cur===null){ newNext=now+PERIOD_ARCHIVE; commit=true; return newNext; }
-      if (now>=cur){ newNext=now+PERIOD_ARCHIVE; commit=true; return newNext; }
-      return;
-    });
-    if (res.committed && commit) {
-      try {
-        fullPixels(); if (showGridChk.checked) drawGridOverlay();
-        await uploadSnapshot('archive', formatParisFilename('archive','png'));
-        await lastArchRef.set(now);
-      } catch(e) { console.warn('Archive échouée:', e); }
-    }
-  }
-
-  // Présence + compteur clics
-  const infoConnectedRef = db.ref('.info/connected');
-  const presenceRootRef  = db.ref('presence');
-  const clicksRef        = db.ref('stats/clicksTotal');
-
-  // UID courant
-  let CURRENT_UID = null;
-
-  auth.signInAnonymously().catch(console.error);
-  auth.onAuthStateChanged(user => {
-    if (!user) return;
-    CURRENT_UID = user.uid;
-
-    // Charger et suivre mon pseudo ; ouvrir le modal si absent
-    db.ref(`users/${CURRENT_UID}/name`).on('value', s=>{
-      const n = s.val();
-      myName = (typeof n === 'string' && n) ? n : null;
-      if (myName) namesByUid[CURRENT_UID] = myName;
-      // Auto-popup si aucun pseudo défini
-      if (!myName) openPseudoModal();
-    });
-
-    const myPresenceRef = presenceRootRef.child(user.uid);
-    infoConnectedRef.on('value', snap => {
-      if (snap.val() === true) {
-        myPresenceRef.onDisconnect().remove().catch(()=>{});
-        myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
-      }
-    });
-
-    let online = 0;
-    presenceRootRef.once('value').then(s => {
-      online = s.numChildren(); onlineEl.textContent = String(online); onlineEl.classList.remove('dim');
-    });
-    presenceRootRef.on('child_added',  ()=>{ online++;  onlineEl.textContent = String(online); });
-    presenceRootRef.on('child_removed', ()=>{ online = Math.max(0, online-1); onlineEl.textContent = String(online); });
-
-    clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
-
-    const pixelsRef = db.ref('pixels');
-
-    // Chargement progressif initial
-    pixelsRef.once('value').then(snap => {
-      const val = snap.val() || {};
-      let i = 0; const keys = Object.keys(val);
-      function chunk() {
-        const t0 = performance.now();
-        while (i < keys.length && performance.now() - t0 < 12) {
-          const key = keys[i++]; const [x,y] = key.split('_').map(Number);
-          const v = val[key] || {};
-          const col = Number.isFinite(+v.color) ? +v.color : 1;
-          if (x>=0 && x<W && y>=0 && y<H) {
-            grid[y][x] = col;
-            authorGrid[y][x] = v.author || null;
-            tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-            if (v.author) ensureName(v.author);
-          }
-        }
-        fullPixels(); if (showGridChk.checked) drawGridOverlay();
-        if (i < keys.length) requestAnimationFrame(chunk);
-      }
-      requestAnimationFrame(chunk);
-    });
-
-    // Temps réel
-    let overlayQueued = false;
-    function queueOverlay(){
-      if (!showGridChk.checked) return;
-      if (overlayQueued) return;
-      overlayQueued = true;
-      requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
+      swatchEl.style.background = currentColor;
+      updateCursor(currentColor);
     }
 
-    pixelsRef.on('child_added', snap => {
-      const [x,y] = snap.key.split('_').map(Number);
-      const v = snap.val() || {};
-      const col = Number.isFinite(+v.color) ? +v.color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) {
-        grid[y][x] = col;
-        authorGrid[y][x] = v.author || null;
-        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-        if (v.author) ensureName(v.author);
-        drawCell(x,y); queueOverlay();
-      }
-    });
-    pixelsRef.on('child_changed', snap => {
-      const [x,y] = snap.key.split('_').map(Number);
-      const v = snap.val() || {};
-      const col = Number.isFinite(+v.color) ? +v.color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) {
-        grid[y][x] = col;
-        authorGrid[y][x] = v.author || null;
-        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-        if (v.author) ensureName(v.author);
-        drawCell(x,y); queueOverlay();
-      }
-    });
+    function setColorIndex(i) {
+      colorIndex = (i + palette.length) % palette.length;
+      currentColor = palette[colorIndex];
+      renderPalette();
+    }
 
-    // Pose de pixel (avec auteur + ts + historique)
-    canvas.addEventListener('click', async (e)=>{
-      const rect = canvas.getBoundingClientRect();
-      const localX = (e.clientX - rect.left) / zoom;
-      const localY = (e.clientY - rect.top)  / zoom;
-      const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
-      if (x<0||x>=W||y<0||y>=H) return;
-      if (selected < 0 || selected >= colors.length) return;
-      const key = `${x}_${y}`;
-      try {
-        const payload = {
-          color: selected,
-          author: CURRENT_UID || 'anon',
-          ts: firebase.database.ServerValue.TIMESTAMP
-        };
-        await db.ref(`pixels/${key}`).set(payload);
-        await db.ref(`history/${key}`).push(payload);
-        await clicksRef.transaction(cur => (cur||0) + 1);
-      } catch (err) {
-        console.error('write pixel / click count error', err);
-      }
-    });
+    function updateCursor(color) {
+      // Génère un petit curseur rond coloré en dataURL (16x16)
+      const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+      const x = c.getContext('2d');
+      x.clearRect(0,0,16,16);
+      x.beginPath(); x.arc(8,8,6,0,Math.PI*2);
+      x.fillStyle = color; x.fill();
+      x.lineWidth = 2; x.strokeStyle = '#000'; x.stroke();
+      const url = c.toDataURL('image/png');
+      viewport.style.cursor = `url(${url}) 8 8, crosshair`;
+    }
 
-    // Raccourci Shift + molette (desktop) = changer de couleur
-    canvas.addEventListener('wheel', e => {
+    renderPalette();
+
+    // Shift + Molette → changer de couleur
+    window.addEventListener('wheel', (e) => {
       if (e.shiftKey) {
         e.preventDefault();
-        if (e.deltaY > 0) selected = (selected + 1) % colors.length;
-        else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
-        [...paletteGrid.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx===selected));
-        updateCursor();
+        const dir = e.deltaY > 0 ? 1 : -1;
+        setColorIndex(colorIndex + dir);
       }
     }, { passive: false });
 
-    // Archives (actives)
-    setInterval(tryArchive, 10*1000);
-  });
+    /*********************************************************
+     * 🧭 Pan & Zoom (bornés)
+     *********************************************************/
+    let scale = 1;
+    let offsetX = 0, offsetY = 0; // translation en px (appliquée au stage)
 
-  // Layout + init
-  function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
-  buildPalette(); updateCursor();
+    function applyTransform() {
+      stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    }
 
-  // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
-  if (window.visualViewport){
-    visualViewport.addEventListener('resize', layoutViewport);
-    visualViewport.addEventListener('scroll',  layoutViewport);
-  }
+    function clampOffsets() {
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const sw = CANVAS_W * scale, sh = CANVAS_H * scale;
+      // on empêche toute fuite : le stage ne peut jamais quitter l'écran
+      const minX = Math.min(0, vw - sw), maxX = 0;
+      const minY = Math.min(0, vh - sh), maxY = 0;
+      if (offsetX < minX) offsetX = minX; if (offsetX > maxX) offsetX = maxX;
+      if (offsetY < minY) offsetY = minY; if (offsetY > maxY) offsetY = maxY;
+    }
 
-  window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
-  window.addEventListener('resize', ()=>{ relayoutAll(); });
-  window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
+    function zoomBy(factor, cx, cy) {
+      // zoom autour d'un point écran (cx,cy) → conserve le point monde
+      const before = screenToWorld(cx, cy);
+      scale *= factor;
+      // limites raisonnables
+      if (scale < 0.2) scale = 0.2; if (scale > 40) scale = 40;
+      const after = { x: before.x * scale, y: before.y * scale };
+      offsetX = cx - after.x;
+      offsetY = cy - after.y;
+      clampOffsets();
+      applyTransform();
+    }
 
-  // Recalage si la palette ou la barre du haut change de taille
-  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
-  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
+    function screenToWorld(sx, sy) {
+      // coordonnées monde en pixels *réels* (pas cellules)
+      const rect = viewport.getBoundingClientRect();
+      const x = (sx - rect.left - offsetX) / scale;
+      const y = (sy - rect.top - offsetY) / scale;
+      return { x, y };
+    }
 
-  // Compte à rebours en pause
-  document.getElementById('countdown').textContent = 'Pause';
+    function worldToCell(wx, wy) {
+      return {
+        x: Math.floor(wx / PIX),
+        y: Math.floor(wy / PIX),
+      };
+    }
+
+    // Boutons Zoom
+    document.getElementById('zoomIn').addEventListener('click', () => {
+      const cx = viewport.clientWidth / 2, cy = viewport.clientHeight / 2;
+      zoomBy(1.2, cx, cy);
+    });
+    document.getElementById('zoomOut').addEventListener('click', () => {
+      const cx = viewport.clientWidth / 2, cy = viewport.clientHeight / 2;
+      zoomBy(1/1.2, cx, cy);
+    });
+
+    // Mode Pan (Main)
+    const togglePanBtn = document.getElementById('togglePan');
+    let panMode = false;
+    togglePanBtn.addEventListener('click', () => {
+      panMode = !panMode;
+      if (panMode) viewport.classList.add('pan-cursor'); else viewport.classList.remove('pan-cursor');
+    });
+
+    let panning = false; let panStartX = 0, panStartY = 0; let startOffsetX = 0, startOffsetY = 0;
+    viewport.addEventListener('pointerdown', (e) => {
+      if (!panMode) return;
+      panning = true; document.body.classList.add('panning');
+      panStartX = e.clientX; panStartY = e.clientY;
+      startOffsetX = offsetX; startOffsetY = offsetY;
+      e.preventDefault();
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!panning) return;
+      offsetX = startOffsetX + (e.clientX - panStartX);
+      offsetY = startOffsetY + (e.clientY - panStartY);
+      clampOffsets(); applyTransform();
+    });
+    window.addEventListener('pointerup', () => { panning = false; document.body.classList.remove('panning'); });
+
+    /*********************************************************
+     * 🧱 Grille (overlay) & Toggle
+     *********************************************************/
+    let showGrid = true;
+
+    function drawGrid() {
+      gctx.clearRect(0,0,gridCanvas.width, gridCanvas.height);
+      if (!showGrid) return;
+      gctx.save();
+      gctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      gctx.lineWidth = 1;
+      // lignes verticales
+      for (let x = 0; x <= GRID_W; x++) {
+        gctx.beginPath();
+        gctx.moveTo(x * PIX + 0.5, 0);
+        gctx.lineTo(x * PIX + 0.5, CANVAS_H);
+        gctx.stroke();
+      }
+      // lignes horizontales
+      for (let y = 0; y <= GRID_H; y++) {
+        gctx.beginPath();
+        gctx.moveTo(0, y * PIX + 0.5);
+        gctx.lineTo(CANVAS_W, y * PIX + 0.5);
+        gctx.stroke();
+      }
+      gctx.restore();
+    }
+    drawGrid();
+
+    document.getElementById('toggleGrid').addEventListener('click', () => {
+      showGrid = !showGrid; drawGrid();
+    });
+
+    /*********************************************************
+     * ✍️ Dessin
+     *********************************************************/
+    let drawing = false;
+    let clicks = 0;
+
+    function drawCell(cx, cy, color) {
+      if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) return;
+      pctx.fillStyle = color;
+      pctx.fillRect(cx * PIX, cy * PIX, PIX, PIX);
+    }
+
+    viewport.addEventListener('pointermove', (e) => {
+      const w = screenToWorld(e.clientX, e.clientY);
+      const cell = worldToCell(w.x, w.y);
+      coordsEl.textContent = `${cell.x},${cell.y}`;
+    });
+
+    viewport.addEventListener('pointerdown', (e) => {
+      if (panMode) return; // pas de dessin en mode pan
+      drawing = true;
+      paintAt(e.clientX, e.clientY);
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!drawing) return;
+      paintAt(e.clientX, e.clientY);
+    });
+    window.addEventListener('pointerup', () => { drawing = false; });
+
+    function paintAt(sx, sy) {
+      const w = screenToWorld(sx, sy);
+      const cell = worldToCell(w.x, w.y);
+      const { x, y } = cell;
+      if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return;
+      // Dessin local
+      drawCell(x, y, currentColor);
+      // Écriture DB
+      set(ref(db, `pixels/${x}_${y}`), { c: currentColor, t: serverTimestamp() });
+      // Clics
+      clicks++; clicksEl.textContent = String(clicks);
+    }
+
+    /*********************************************************
+     * 🔄 Synchro en temps réel (lecture)
+     *********************************************************/
+    const pixelsRef = ref(db, 'pixels');
+
+    // Dessin incrémental des pixels reçus
+    onChildAdded(pixelsRef, (snap) => {
+      const k = snap.key; const v = snap.val(); if (!v) return;
+      const [x, y] = k.split('_').map(Number); drawCell(x, y, v.c);
+    });
+    onChildChanged(pixelsRef, (snap) => {
+      const k = snap.key; const v = snap.val(); if (!v) return;
+      const [x, y] = k.split('_').map(Number); drawCell(x, y, v.c);
+    });
+
+    /*********************************************************
+     * 👥 Presence (connectés)
+     *********************************************************/
+    const presenceRef = ref(db, 'presence');
+    const meRef = push(presenceRef);
+    onDisconnect(meRef).remove();
+    set(meRef, { at: serverTimestamp(), ua: navigator.userAgent.slice(0,64) })
+      .catch(()=>{});
+
+    onValue(presenceRef, (snap) => {
+      const val = snap.val() || {};
+      const n = Object.keys(val).length;
+      connEl.textContent = String(n);
+    });
+
+    /*********************************************************
+     * 🗃️ Archivage PNG automatique (toutes les 60s)
+     *********************************************************/
+    const ARCHIVE_ACTIVE = true; // actif par défaut
+
+    function pad(n){ return n.toString().padStart(2,'0'); }
+    function tsName() {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const MM = pad(d.getMonth()+1);
+      const dd = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mm = pad(d.getMinutes());
+      const ss = pad(d.getSeconds());
+      return `${yyyy}${MM}${dd}_${hh}${mm}${ss}`;
+    }
+
+    async function archivePNG() {
+      if (!ARCHIVE_ACTIVE) return;
+      try {
+        await new Promise((resolve) => paintCanvas.toBlob(resolve, 'image/png'))
+          .then(async (blob) => {
+            if (!blob) return;
+            const name = `archives/${tsName()}.png`;
+            const dest = sRef(storage, name);
+            await uploadBytes(dest, blob);
+            showToast('Archivage PNG OK → ' + name);
+          });
+      } catch (e) {
+        console.warn('Archivage échoué:', e);
+      }
+    }
+
+    setInterval(archivePNG, 60_000);
+
+    /*********************************************************
+     * ♻️ Reset auto 48h (PAUSE)
+     *********************************************************/
+    const RESET_ACTIVE = false; // Laisser à false tant que la feature est en pause
+    const RESET_EVERY_HOURS = 48;
+    const lastResetRef = ref(db, 'meta/lastReset');
+
+    async function maybeReset() {
+      if (!RESET_ACTIVE) return;
+      onValue(lastResetRef, async (snap) => {
+        const last = snap.val();
+        const now = Date.now();
+        if (!last || now - last > RESET_EVERY_HOURS * 3600_000) {
+          // ⚠️ Réinitialisation : côté client on ne purge pas la DB entière.
+          // On préfère déléguer un Cloud Function/Admin Script, ou écrire un flag.
+          // Ici, on se contente d'effacer le canvas local pour l'exemple.
+          pctx.clearRect(0,0,CANVAS_W, CANVAS_H);
+          // TODO: implémenter une vraie purge côté serveur (sécurité/règles nécessaires).
+          set(lastResetRef, Date.now());
+          showToast('Reset logic PAUSE — placeholder exécuté côté client.');
+        }
+      }, { onlyOnce: true });
+    }
+
+    maybeReset();
+
+    /*********************************************************
+     * 🧰 Utilitaires UI
+     *********************************************************/
+    function showToast(msg, ms=2500) {
+      toastEl.textContent = msg; toastEl.style.display = 'block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(()=>{ toastEl.style.display = 'none'; }, ms);
+    }
+
+    // HUD couleur active = synchro
+    function updateHUDColor() { swatchEl.style.background = currentColor; }
+
+    /*********************************************************
+     * ⌨️ Accessibilité / Raccourcis
+     *********************************************************/
+    // [G] = toggle grille, [M] = mode Main (pan)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'g' || e.key === 'G') { showGrid = !showGrid; drawGrid(); }
+      if (e.key === 'm' || e.key === 'M') { togglePanBtn.click(); }
+      if ((e.key === '+' || e.key === '=') && !e.shiftKey) {
+        const cx = viewport.clientWidth / 2, cy = viewport.clientHeight / 2; zoomBy(1.2, cx, cy);
+      }
+      if (e.key === '-') {
+        const cx = viewport.clientWidth / 2, cy = viewport.clientHeight / 2; zoomBy(1/1.2, cx, cy);
+      }
+      if (e.key === '[') setColorIndex(colorIndex - 1);
+      if (e.key === ']') setColorIndex(colorIndex + 1);
+    });
+
+    // Synchroniser HUD couleur lors des changements
+    const _origSetColor = setColorIndex;
+    setColorIndex = function(i){ _origSetColor(i); updateHUDColor(); };
+
+    // Démarrage : centrer stage si plus petit que viewport
+    function centerIfSmaller() {
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const sw = CANVAS_W * scale, sh = CANVAS_H * scale;
+      if (sw < vw) offsetX = Math.floor((vw - sw)/2);
+      if (sh < vh) offsetY = Math.floor((vh - sh)/2);
+      applyTransform();
+    }
+
+    centerIfSmaller();
+    window.addEventListener('resize', () => { clampOffsets(); applyTransform(); });
+
   </script>
 </body>
 </html>
