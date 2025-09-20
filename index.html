@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <!-- On désactive le zoom natif ; le pinch est géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (zoom centré & doux, scroll borné)</title>
+  <title>Pixel War — 300×300 (fix OnePlus: safe-area + boutons palette)</title>
   <style>
     :root{
       --bar-h: 92px;
@@ -12,10 +12,25 @@
       --gap: 8px;
       --sw: 28px;
       --cols: 14;
+      /* Safe area (Android/iOS) */
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
     }
     * { box-sizing: border-box; }
-    html, body { height: 100svh; overflow: hidden; }
-    body { font-family: system-ui, sans-serif; margin: 16px; }
+    /* Utiliser la vraie hauteur visuelle (corrige la “barre blanche” sur Android/OnePlus) */
+    html, body {
+      height: 100dvh;          /* nouvelle unité : hauteur viewport visuelle */
+      min-height: 100dvh;
+      /* fallbacks */
+      height: -webkit-fill-available;
+      overflow: hidden;
+      background:#fff;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 16px;
+      padding-bottom: var(--safe-bottom); /* évite recouvrement par zone gestuelle */
+    }
     h1 { margin: 0 0 8px 0; font-size: 18px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
@@ -45,18 +60,19 @@
     }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette bas (2 lignes) + boutons +/− empilés */
+    /* Palette bas (2 lignes) + boutons +/− empilés (ou dessous en mobile étroit) */
     #paletteBar{
       position: fixed;
       left: 50%;
       transform: translateX(-50%);
-      bottom: 8px;
+      /* tenir compte de la safe area pour éviter une “bande blanche” */
+      bottom: calc(8px + var(--safe-bottom));
       max-width: min(100vw - 16px, 1100px);
       padding: var(--bar-pad);
       border: 1px solid #333; border-radius: 14px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto; /* grille couleurs | dock boutons */
       align-items: center;
       gap: 10px;
       z-index: 10;
@@ -96,6 +112,12 @@
     .toggle{ display:flex; gap:6px; align-items:center; }
     #panToggle.active { background:#000; color:#fff; }
 
+    /* ✅ Sur écrans très étroits (ex: OnePlus UI/zoom), on met les boutons sous la palette pour qu’ils restent visibles */
+    @media (max-width: 420px){
+      #paletteBar{ grid-template-columns: 1fr; }
+      .dockZoom{ flex-direction: row; }
+    }
+
     @media (max-width: 480px){
       :root{ --gap: 6px; }
       body{ margin: 12px; }
@@ -132,7 +154,7 @@
     </div>
   </div>
 
-  <!-- Palette bas : grille 2 lignes + boutons verticalisés -->
+  <!-- Palette bas : grille 2 lignes + boutons (toujours visibles) -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
     <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
@@ -149,7 +171,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-const firebaseConfig = {
+  const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -210,12 +232,25 @@ const firebaseConfig = {
   const showGridChk= document.getElementById('showGridChk');
   const panToggle  = document.getElementById('panToggle');
 
+  // ——— Helpers safe-area / visual viewport ———
+  function cssNumber(varName, el = document.documentElement){
+    const v = getComputedStyle(el).getPropertyValue(varName);
+    return parseFloat(v) || 0;
+  }
+  function getSafeBottom(){ return cssNumber('--safe-bottom'); }
+
   // === Layout : viewport borné entre le header et la palette ===
   function layoutViewport(){
-    const uiRect = uiBar.getBoundingClientRect();
+    const uiRect  = uiBar.getBoundingClientRect();
     const palRect = paletteBar.getBoundingClientRect();
-    viewport.style.top = Math.round(uiRect.bottom + 8) + 'px';
-    const bottomSpace = Math.round((window.innerHeight - palRect.top) + 8);
+
+    // Utiliser la *visual viewport* si dispo (Chrome Android) pour éviter le “trou blanc”
+    const vv = window.visualViewport;
+    const screenH = vv ? vv.height : window.innerHeight;
+
+    // Espace entre le bas du viewport visuel et le haut de la palette
+    const bottomSpace = Math.round((screenH - palRect.top) + 8 + getSafeBottom());
+    viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
     viewport.style.bottom = bottomSpace + 'px';
   }
 
@@ -545,7 +580,7 @@ const firebaseConfig = {
       requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
     }
     pixelsRef.on('child_added', snap => {
-      const [x,y] = snap.key.split('_').map(Number);
+      const [x,y] = snap.key split('_').map(Number);
       const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
       if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
     });
@@ -633,6 +668,13 @@ const firebaseConfig = {
   // Layout + sizer init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
+
+  // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait, zoom UI, etc.)
+  if (window.visualViewport){
+    visualViewport.addEventListener('resize', layoutViewport);
+    visualViewport.addEventListener('scroll',  layoutViewport);
+  }
+
   window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
   window.addEventListener('resize', ()=>{ relayoutAll(); });
   window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
@@ -646,4 +688,3 @@ const firebaseConfig = {
   </script>
 </body>
 </html>
-
