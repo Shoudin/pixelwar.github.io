@@ -2,45 +2,40 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <!-- UI mobile stable : on zoome le canvas (pas la page) -->
+  <!-- On empêche le zoom natif du navigateur ; on gère le pinch en JS -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (palette 2 lignes, pause reset, scroll borné)</title>
+  <title>Pixel War — 300×300 (pinch interne, palette 2 lignes, pause reset)</title>
   <style>
     :root{
-      --bar-h: 92px;   /* hauteur approx. de la palette (ajustée par JS) */
+      --bar-h: 92px;
       --bar-pad: 10px;
-      --gap: 8px;      /* espace entre cases */
-      --sw: 28px;      /* taille case (fixée par JS) */
-      --cols: 14;      /* colonnes (fixé par JS) */
+      --gap: 8px;
+      --sw: 28px;
+      --cols: 14;
     }
     * { box-sizing: border-box; }
-
-    /* Empêche le scroll de PAGE ; on scrolle uniquement dans #viewport */
     html, body { height: 100svh; overflow: hidden; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
-
     h1 { margin: 0 0 8px 0; font-size: 18px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
-    /* Viewport scrollable qui contient la scène */
+    /* Viewport scrollable encadré entre le header et la palette */
     #viewport{
       position: fixed;
       left: 0; right: 0;
-      /* top et bottom sont définis dynamiquement par JS pour éviter tout blanc */
       overflow: auto;
-      overscroll-behavior: contain;  /* évite le “rebond” et la propagation */
+      overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;     /* autorise le défilement naturel */
-      background: #fff;              /* pas de noir/blanc “infini” */
-      z-index: 1;                    /* sous la palette */
+      touch-action: pan-x pan-y;   /* sera temporairement mis à none pendant le pinch interne */
+      background: #fff;
+      z-index: 1;
     }
 
-    /* Scène */
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette bas centrée : grille 2 lignes + boutons +/- empilés */
+    /* Palette bas (2 lignes) + boutons +/− empilés */
     #paletteBar{
       position: fixed;
       left: 50%;
@@ -51,13 +46,12 @@
       border: 1px solid #333; border-radius: 14px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
       display: grid;
-      grid-template-columns: 1fr auto;   /* paletteGrid | boutons */
+      grid-template-columns: 1fr auto;
       align-items: center;
       gap: 10px;
       z-index: 10;
     }
 
-    /* Grille 2 lignes (colonnes & taille pilotées par JS) */
     #paletteGrid{
       display: grid;
       grid-auto-flow: row dense;
@@ -81,7 +75,7 @@
       align-items:center; justify-content:center;
     }
     .dockZoom button{
-      width: 36px; height: 28px;   /* réduit + empilé */
+      width: 36px; height: 28px;
       border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
       font-size: 16px; line-height: 1;
     }
@@ -90,6 +84,9 @@
     .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
     .toggle{ display:flex; gap:6px; align-items:center; }
+
+    /* Bouton Main (pan) */
+    #panToggle.active { background:#000; color:#fff; }
 
     @media (max-width: 480px){
       :root{ --gap: 6px; }
@@ -110,6 +107,7 @@
       <div class="level" id="zLevel">100%</div>
       <button id="zIn"   title="Zoom +">+</button>
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
+      <button id="panToggle" title="Activer/Désactiver la main">Main</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
       <input type="checkbox" id="showGridChk"> Grille
@@ -174,7 +172,7 @@
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
 
-  // === Palette (ordre demandé + rouge + 3 peaux) ===
+  // === Palette (ordre + rouge + 3 peaux) ===
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
@@ -199,14 +197,13 @@
   const coordsEl   = document.getElementById('coords');
   const zLevelEl   = document.getElementById('zLevel');
   const showGridChk= document.getElementById('showGridChk');
+  const panToggle  = document.getElementById('panToggle');
 
-  // === Layout : viewport borné entre la barre du haut et la palette ===
+  // === Layout : viewport borné entre le header et la palette ===
   function layoutViewport(){
     const uiRect = uiBar.getBoundingClientRect();
     const palRect = paletteBar.getBoundingClientRect();
-    // top = bas de l'UI + 8px
     viewport.style.top = Math.round(uiRect.bottom + 8) + 'px';
-    // bottom = (hauteur palette + 12px marge)
     const bottomSpace = Math.round((window.innerHeight - palRect.top) + 8);
     viewport.style.bottom = bottomSpace + 'px';
   }
@@ -271,7 +268,7 @@
   canvas.addEventListener('mouseenter', updateCursor);
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
 
-  // Palette : 2 LIGNES, taille auto
+  // Palette 2 lignes
   function buildPalette(){
     paletteGrid.innerHTML = '';
     colors.forEach((c,i)=>{
@@ -289,8 +286,8 @@
   }
 
   function layoutPaletteTwoRows(){
-    const total = colors.length;                // 30 couleurs
-    const cols  = Math.ceil(total / 2);         // 15 colonnes
+    const total = colors.length;                // 30
+    const cols  = Math.ceil(total / 2);         // 15
     const bar   = paletteBar;
     const btns  = bar.querySelector('.dockZoom');
     const barRect = bar.getBoundingClientRect();
@@ -301,34 +298,33 @@
     const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
     const sw = Math.floor((available - gap*(cols-1)) / cols);
 
-    const minSw = 18;                      // mini lisible
-    const maxSw = IS_MOBILE ? 28 : 32;     // un peu plus grand sur desktop
+    const minSw = 18;
+    const maxSw = IS_MOBILE ? 28 : 32;
     const clamped = Math.max(minSw, Math.min(maxSw, sw));
 
     bar.style.setProperty('--cols', cols);
     bar.style.setProperty('--sw', clamped + 'px');
 
     const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
-    const barH = (clamped*2) + gap + barPad; // 2 lignes + 1 gap vertical
+    const barH = (clamped*2) + gap + barPad; // 2 lignes + 1 gap
     document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
   }
 
-  // Construire & poser la palette
-  buildPalette();
-  updateCursor();
-
-  // Layout global (viewport + palette sizing)
+  // Layout global
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); }
+  buildPalette(); updateCursor();
   window.addEventListener('load', relayoutAll);
   window.addEventListener('resize', relayoutAll);
   window.addEventListener('orientationchange', relayoutAll);
-  // petits recalages tardifs
   setTimeout(relayoutAll, 200);
   setTimeout(relayoutAll, 800);
 
-  // Zoom (canvas, pas la page)
+  // === Zoom interne (le canvas zoome, pas la page) ===
   let zoom = 1;
-  function applyZoom(){ document.getElementById('stageWrap').style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
+  function applyZoom(){
+    document.getElementById('stageWrap').style.transform = `scale(${zoom})`;
+    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
+  }
   function zoomIn(){  zoom = Math.min(4, zoom * 1.25); applyZoom(); }
   function zoomOut(){ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); }
   document.getElementById('zIn').onclick    = zoomIn;
@@ -338,7 +334,96 @@
   document.getElementById('dockZOut').onclick = zoomOut;
   applyZoom();
 
-  // Coordonnées (x,y) avec zoom
+  // ====== Pinch-to-zoom contrôlé par l'app ======
+  function clampZoom(z){ return Math.max(0.25, Math.min(4, z)); }
+  function setZoomAround(newZoom, anchorClientX, anchorClientY){
+    const stageWrap = document.getElementById('stageWrap');
+    const vp = document.getElementById('viewport');
+
+    // Rect avant zoom
+    const rectBefore = stageWrap.getBoundingClientRect();
+    const offsetXBefore = anchorClientX - rectBefore.left + vp.scrollLeft;
+    const offsetYBefore = anchorClientY - rectBefore.top  + vp.scrollTop;
+
+    // Applique le nouveau zoom
+    zoom = clampZoom(newZoom);
+    applyZoom();
+
+    // Rect après zoom
+    const rectAfter = stageWrap.getBoundingClientRect();
+    const offsetXAfter = anchorClientX - rectAfter.left;
+    const offsetYAfter = anchorClientY - rectAfter.top;
+
+    // Ajuste le scroll pour garder le point d'ancrage sous les doigts
+    vp.scrollLeft = offsetXBefore - offsetXAfter;
+    vp.scrollTop  = offsetYBefore - offsetYAfter;
+  }
+
+  const activePointers = new Map();
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
+  let pinchInProgress = false;
+
+  function pointersDistance(){
+    const arr = [...activePointers.values()];
+    if (arr.length < 2) return 0;
+    const dx = arr[0].x - arr[1].x;
+    const dy = arr[0].y - arr[1].y;
+    return Math.hypot(dx, dy);
+  }
+  function pointersMidpoint(){
+    const arr = [...activePointers.values()];
+    return { x: (arr[0].x + arr[1].x)/2, y: (arr[0].y + arr[1].y)/2 };
+  }
+
+  const vpEl = document.getElementById('viewport');
+  function setTouchActionDuringPinch(on){
+    vpEl.style.touchAction = on ? 'none' : 'pan-x pan-y';
+  }
+
+  vpEl.addEventListener('pointerdown', (e)=>{
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 2){
+      pinchInProgress = true;
+      const mid = pointersMidpoint();
+      pinchStartDist = pointersDistance();
+      pinchStartZoom = zoom;
+      setTouchActionDuringPinch(true);
+      // Empêche le comportement natif (juste au cas où)
+      e.preventDefault();
+    }
+  }, { passive:false });
+
+  vpEl.addEventListener('pointermove', (e)=>{
+    if (!activePointers.has(e.pointerId)) return;
+
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pinchInProgress && activePointers.size >= 2){
+      const dist = pointersDistance();
+      if (dist > 0 && pinchStartDist > 0){
+        const factor = dist / pinchStartDist;
+        const newZoom = clampZoom(pinchStartZoom * factor);
+        const mid = pointersMidpoint(); // ancre = milieu courant des doigts
+        setZoomAround(newZoom, mid.x, mid.y);
+        e.preventDefault();
+      }
+    }
+  }, { passive:false });
+
+  function endPointer(e){
+    if (activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
+    if (activePointers.size < 2 && pinchInProgress){
+      pinchInProgress = false;
+      setTouchActionDuringPinch(false);
+    }
+  }
+  vpEl.addEventListener('pointerup', endPointer, { passive:true });
+  vpEl.addEventListener('pointercancel', endPointer, { passive:true });
+  vpEl.addEventListener('pointerleave', endPointer, { passive:true });
+
+  // === Coordonnées (x,y) avec zoom
   function screenToGrid(clientX, clientY){
     const rect = canvas.getBoundingClientRect();
     const localX = (clientX - rect.left) / zoom;
@@ -420,7 +505,7 @@
     presenceRootRef.once('value').then(s => {
       online = s.numChildren(); onlineEl.textContent = String(online); onlineEl.classList.remove('dim');
     });
-    presenceRootRef.on('child_added',  ()=>{ online++; onlineEl.textContent = String(online); });
+    presenceRootRef.on('child_added',  ()=>{ online++;  onlineEl.textContent = String(online); });
     presenceRootRef.on('child_removed', ()=>{ online = Math.max(0, online-1); onlineEl.textContent = String(online); });
 
     clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
@@ -463,7 +548,9 @@
     });
 
     // Pose de pixel (avec zoom) + incrément compteur
+    let panActive = false; // sera géré plus bas par le bouton Main
     canvas.addEventListener('click', async (e)=>{
+      if (panActive) return; // en mode Main, pas de pose
       const rect = canvas.getBoundingClientRect();
       const localX = (e.clientX - rect.left) / zoom;
       const localY = (e.clientY - rect.top)  / zoom;
@@ -477,7 +564,7 @@
       } catch (err) { console.error('write pixel / click count error', err); }
     });
 
-    // Raccourci Shift + molette (desktop)
+    // Raccourci Shift + molette (desktop) = changer de couleur
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
@@ -488,16 +575,52 @@
       }
     }, { passive: false });
 
-    // ——— PAUSE du reset : pas de timers reset/compte à rebours ———
-    // tryReset();
-    // setInterval(tryReset,   60*1000);
-    // setInterval(async ()=>{ const snap = await nextResetRef.get(); updateCountdown(snap.val()); }, 1000);
-
-    // Archives (toujours actives)
+    // Archives (actives)
     setInterval(tryArchive, 10*1000);
+
+    // ========== Mode MAIN (pan/drag du viewport) ==========
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let startScrollLeft = 0, startScrollTop = 0;
+
+    function setPanActive(on){
+      panActive = on;
+      panToggle.classList.toggle('active', panActive);
+      viewport.style.cursor = panActive ? 'grab' : 'default';
+    }
+
+    panToggle.addEventListener('click', ()=> setPanActive(!panActive) );
+
+    viewport.addEventListener('pointerdown', (e)=>{
+      if (!panActive) return;
+      isDragging = true;
+      viewport.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      startScrollLeft = viewport.scrollLeft;
+      startScrollTop  = viewport.scrollTop;
+      viewport.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+    viewport.addEventListener('pointermove', (e)=>{
+      if (!panActive || !isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      viewport.scrollLeft = startScrollLeft - dx;
+      viewport.scrollTop  = startScrollTop  - dy;
+      e.preventDefault();
+    });
+    function endPan(e){
+      if (!isDragging) return;
+      isDragging = false;
+      try { viewport.releasePointerCapture(e.pointerId); } catch {}
+      viewport.style.cursor = panActive ? 'grab' : 'default';
+    }
+    viewport.addEventListener('pointerup', endPan);
+    viewport.addEventListener('pointercancel', endPan);
+    viewport.addEventListener('pointerleave', endPan);
   });
 
-  // Relayout si la palette change de taille (par ex. rotation)
+  // Relayout si la palette ou la barre du haut change de taille
   new ResizeObserver(()=>layoutViewport()).observe(paletteBar);
   new ResizeObserver(()=>layoutViewport()).observe(uiBar);
   </script>
