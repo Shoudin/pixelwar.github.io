@@ -499,9 +499,20 @@
   const pseudoCancel = document.getElementById('pseudoCancel');
   const pseudoError  = document.getElementById('pseudoError');
 
+  // ➕ Nouveau : met à jour le texte du bouton en fonction du pseudo
+  function updatePseudoBtn() {
+    pseudoBtn.textContent = myName ? myName : 'Pseudo';
+  }
+
   function openPseudoModal(){
     pseudoError.textContent = '';
     pseudoInput.value = myName || '';
+    // ➕ Nouveau : si aucun pseudo encore, on masque "Annuler"
+    if (!myName) {
+      pseudoCancel.style.display = 'none';
+    } else {
+      pseudoCancel.style.display = '';
+    }
     pseudoModal.hidden = false;
     setTimeout(()=> pseudoInput.focus(), 0);
   }
@@ -555,6 +566,7 @@
 
       myName = raw;
       namesByUid[CURRENT_UID] = raw;
+      updatePseudoBtn(); // ➕ Nouveau : bouton mis à jour
       closePseudoModal();
     } catch (err){
       console.error(err);
@@ -657,6 +669,7 @@
       const n = s.val();
       myName = (typeof n === 'string' && n) ? n : null;
       if (myName) namesByUid[CURRENT_UID] = myName;
+      updatePseudoBtn(); // ➕ Nouveau : reflète le pseudo sur le bouton
       // Auto-popup si aucun pseudo défini
       if (!myName) openPseudoModal();
     });
@@ -778,6 +791,7 @@
   // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
+  updatePseudoBtn(); // ➕ Nouveau : initialise le texte du bouton au démarrage
 
   // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
   if (window.visualViewport){
