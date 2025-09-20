@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — Admin</title>
+  <title>Le Grand Gribidouillage — Admin</title>
   <style>
     :root{ --pad:16px; --gap:12px; --card:#fff; --ink:#111; --muted:#666; --bd:#ddd; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:#f6f7f9; color:var(--ink); font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    header{ padding: var(--pad); border-bottom:1px solid var(--bd); background:#fff; position:sticky; top:0; z-index:10; }
+    header{ padding: var(--pad); border-bottom:1px solid var(--bd); background:#fff; position:sticky; top:0; z-index:20; }
     h1{ margin:0; font-size:20px; }
-    .wrap{ padding: var(--pad); display:grid; gap: var(--pad); grid-template-columns: 1.1fr 1fr; align-items:start; }
+    .wrap{ padding: var(--pad); }
     .card{ background:var(--card); border:1px solid var(--bd); border-radius:12px; padding: var(--pad); }
     .row{ display:flex; gap: var(--gap); align-items:center; flex-wrap:wrap; }
     .grid{ display:grid; gap: var(--gap); }
-    .grid.cols2{ grid-template-columns: 1fr 1fr; }
+    .grid.cols2{ grid-template-columns: 1.1fr 1fr; align-items:start; }
     label.inline{ display:flex; gap:8px; align-items:center; }
     .muted{ color: var(--muted); }
     button{ padding:8px 12px; border-radius:10px; border:1px solid #bbb; background:#fff; cursor:pointer; font-weight:600; }
@@ -24,10 +24,24 @@
     .kpi .item{ padding:14px; border:1px solid var(--bd); border-radius:12px; background:#fff; }
     .kpi .n{ font-size:22px; font-weight:800; }
     canvas{ image-rendering: pixelated; border:1px solid #333; background:#fff; }
+
+    /* Tabs */
+    .tabs{ display:flex; gap:8px; border-bottom:1px solid var(--bd); margin-bottom:12px; }
+    .tab{ padding:8px 12px; border:1px solid var(--bd); border-bottom:none; border-radius:10px 10px 0 0; background:#fafafa; cursor:pointer; }
+    .tab.active{ background:#fff; font-weight:700; }
+    .tabpanes > .pane{ display:none; }
+    .tabpanes > .pane.active{ display:block; }
+
     .danger{ color:#b00020; border-color:#b00020; }
     .ok{ color:#0a7a20; }
     .note{ font-size:12px; }
     .footer{ padding: var(--pad); text-align:center; color:var(--muted); }
+
+    table{ width:100%; border-collapse: collapse; }
+    th, td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); font-size:14px; }
+    th{ background:#fafafa; position:sticky; top:0; z-index:10; }
+    .tablewrap{ max-height: 60vh; overflow:auto; border:1px solid var(--bd); border-radius:10px; background:#fff; }
+    .right{ text-align:right; }
   </style>
 </head>
 <body>
@@ -36,84 +50,133 @@
       <h1>Admin — Pixel War</h1>
       <span class="muted">• contrôle & maintenance</span>
     </div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="dash">Tableau de bord</div>
+      <div class="tab" data-tab="history">Historique</div>
+    </div>
   </header>
 
   <div class="wrap">
-    <!-- Colonne A -->
-    <section class="grid">
-      <div class="card">
-        <h2 style="margin-top:0">Accès admin</h2>
-        <p class="muted">Saisis le <strong>code admin</strong> défini dans <code>config/adminCode</code> (Realtime DB).</p>
-        <div class="row">
-          <input id="adminCodeInput" type="password" placeholder="••••••••" />
-          <button id="adminCodeCheck">Déverrouiller</button>
-          <span id="adminGateStatus" class="muted">verrouillé</span>
-        </div>
-        <p class="note">Tant que non déverrouillé, les actions critiques restent désactivées.</p>
-      </div>
-
-      <div class="card">
-        <h2 style="margin-top:0">Stats</h2>
-        <div class="kpi">
-          <div class="item">
-            <div class="muted">Connectés</div>
-            <div id="kOnline" class="n">—</div>
-          </div>
-          <div class="item">
-            <div class="muted">Pixels posés</div>
-            <div id="kPixels" class="n">—</div>
-          </div>
-          <div class="item">
-            <div class="muted">Clics total</div>
-            <div id="kClicks" class="n">—</div>
-          </div>
-        </div>
-        <div class="row" style="margin-top:12px">
-          <div class="muted">Dernier reset :</div>
-          <div id="lastReset">—</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2 style="margin-top:0">Aperçu mosaïque</h2>
-        <div class="row">
-          <canvas id="preview" width="300" height="300"></canvas>
-          <div class="grid" style="align-content:start">
-            <button id="btnRefreshPreview">Rafraîchir</button>
-            <button id="btnExportPNG">Exporter PNG</button>
-            <button id="btnArchivePNG" disabled>Archiver vers Storage</button>
-            <span class="note">Palette et dimensions : 300×300, couleurs indexées.</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Colonne B -->
-    <section class="grid">
-      <div class="card">
-        <h2 style="margin-top:0">Actions</h2>
-        <div class="grid">
-          <div>
-            <div class="muted">Purge complète (efface <code>pixels/</code> & écrit <code>config/lastResetAt</code>)</div>
-            <div class="row" style="margin-top:8px">
-              <input id="confirmClear" type="text" placeholder='Tape "CLEAR" pour confirmer' />
-              <button id="btnClear" class="danger" disabled>Vider la mosaïque</button>
+    <div class="tabpanes">
+      <!-- ====== PANE: DASHBOARD ====== -->
+      <section id="pane-dash" class="pane active">
+        <div class="grid cols2">
+          <!-- Colonne A -->
+          <section class="grid">
+            <div class="card">
+              <h2 style="margin-top:0">Accès admin</h2>
+              <p class="muted">Saisis le <strong>code admin</strong> défini dans <code>config/adminCode</code> (Realtime DB).</p>
+              <div class="row">
+                <input id="adminCodeInput" type="password" placeholder="••••••••" />
+                <button id="adminCodeCheck">Déverrouiller</button>
+                <span id="adminGateStatus" class="muted">verrouillé</span>
+              </div>
+              <p class="note">Tant que non déverrouillé, les actions critiques restent désactivées.</p>
             </div>
-            <p class="note">⚠️ Irréversible. Sauvegarde/Archive avant !</p>
-          </div>
-        </div>
-      </div>
 
-      <div class="card">
-        <h2 style="margin-top:0">Infos système</h2>
-        <ul class="note">
-          <li>SDK: Firebase compat 10.12.2</li>
-          <li>DB: <code>pixels/{x}_{y} → { color:number, author?:uid, ts?:number }</code></li>
-          <li>Archive Storage dossier: <code>archive/</code></li>
-        </ul>
-        <div id="sysStatus" class="muted">Prêt.</div>
-      </div>
-    </section>
+            <div class="card">
+              <h2 style="margin-top:0">Stats</h2>
+              <div class="kpi">
+                <div class="item">
+                  <div class="muted">Connectés</div>
+                  <div id="kOnline" class="n">—</div>
+                </div>
+                <div class="item">
+                  <div class="muted">Pixels posés</div>
+                  <div id="kPixels" class="n">—</div>
+                </div>
+                <div class="item">
+                  <div class="muted">Clics total</div>
+                  <div id="kClicks" class="n">—</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <div class="muted">Dernier reset :</div>
+                <div id="lastReset">—</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin-top:0">Aperçu mosaïque</h2>
+              <div class="row">
+                <canvas id="preview" width="300" height="300"></canvas>
+                <div class="grid" style="align-content:start">
+                  <button id="btnRefreshPreview">Rafraîchir</button>
+                  <button id="btnExportPNG">Exporter PNG</button>
+                  <button id="btnArchivePNG" disabled>Archiver vers Storage</button>
+                  <span class="note">Palette & dimensions: 300×300, couleurs indexées.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Colonne B -->
+          <section class="grid">
+            <div class="card">
+              <h2 style="margin-top:0">Actions</h2>
+              <div class="grid">
+                <div>
+                  <div class="muted">Purge complète (efface <code>pixels/</code> & écrit <code>config/lastResetAt</code>)</div>
+                  <div class="row" style="margin-top:8px">
+                    <input id="confirmClear" type="text" placeholder='Tape "CLEAR" pour confirmer' />
+                    <button id="btnClear" class="danger" disabled>Vider la mosaïque</button>
+                  </div>
+                  <p class="note">⚠️ Irréversible. Sauvegarde/Archive avant !</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin-top:0">Infos système</h2>
+              <ul class="note">
+                <li>SDK: Firebase compat 10.12.2</li>
+                <li>DB: <code>pixels/{x}_{y} → { color:number, author?:uid, ts?:number }</code></li>
+                <li>Historique: <code>history/{x}_{y}/{pushId} → { color, author, ts }</code></li>
+                <li>Archive Storage: <code>archive/</code></li>
+              </ul>
+              <div id="sysStatus" class="muted">Prêt.</div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ====== PANE: HISTORY ====== -->
+      <section id="pane-history" class="pane">
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <h2 style="margin:0">Historique des poses</h2>
+            <div class="row">
+              <label class="inline">
+                Limite:
+                <select id="histLimit">
+                  <option value="100">100</option>
+                  <option value="200" selected>200</option>
+                  <option value="300">300</option>
+                  <option value="500">500</option>
+                </select>
+              </label>
+              <button id="btnReloadHistory">Rafraîchir</button>
+            </div>
+          </div>
+          <div class="tablewrap" style="margin-top:12px">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pseudo</th>
+                  <th>Emplacement</th>
+                  <th>Heure</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="historyBody">
+                <!-- rows -->
+              </tbody>
+            </table>
+          </div>
+          <p class="note" style="margin-top:8px">Tri décroissant par date (les plus récents en haut).</p>
+        </div>
+      </section>
+    </div>
   </div>
 
   <div class="footer">© Le Grand Gribidouillage — Admin</div>
@@ -153,6 +216,11 @@
   ];
 
   // === UI refs ===
+  // Tabs
+  const tabs = document.getElementById('tabs');
+  const paneDash = document.getElementById('pane-dash');
+  const paneHistory = document.getElementById('pane-history');
+
   const kOnline = document.getElementById('kOnline');
   const kPixels = document.getElementById('kPixels');
   const kClicks = document.getElementById('kClicks');
@@ -172,14 +240,38 @@
   const confirmClear = document.getElementById('confirmClear');
   const btnClear = document.getElementById('btnClear');
 
+  // History refs
+  const historyBody = document.getElementById('historyBody');
+  const btnReloadHistory = document.getElementById('btnReloadHistory');
+  const histLimitSel = document.getElementById('histLimit');
+
   let ADMIN_OK = false;
   let CURRENT_UID = null;
+
+  // === Tabs handler ===
+  tabs.addEventListener('click', (e)=>{
+    const t = e.target.closest('.tab'); if(!t) return;
+    document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+    t.classList.add('active');
+    const id = t.dataset.tab;
+    paneDash.classList.toggle('active', id==='dash');
+    paneHistory.classList.toggle('active', id==='history');
+  });
 
   function tsToFR(ts){
     if (!ts) return '—';
     const d = new Date(ts);
     return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium', timeStyle:'short' }).format(d);
   }
+  function onlyDate(ts){
+    const d = new Date(ts);
+    return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium' }).format(d);
+  }
+  function onlyTime(ts){
+    const d = new Date(ts);
+    return new Intl.DateTimeFormat('fr-FR',{ timeStyle:'medium' }).format(d);
+  }
+  function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
 
   function guard(){
     btnArchivePNG.disabled = !ADMIN_OK;
@@ -191,7 +283,7 @@
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(u => { CURRENT_UID = u ? u.uid : null; });
 
-  // === Gate admin par code (stocké en DB)
+  // === Gate admin par code (stocké en DB) ===
   adminCodeCheck.addEventListener('click', async ()=>{
     try{
       const snap = await db.ref('config/adminCode').once('value');
@@ -207,63 +299,69 @@
   });
 
   // === Stats live ===
-  // Connectés
   db.ref('presence').on('value', s => {
     const v = s.val() || {};
     kOnline.textContent = String(Object.keys(v).length);
   });
-  // Clics total
   db.ref('stats/clicksTotal').on('value', s => {
     kClicks.textContent = String(s.val() || 0);
   });
-  // Dernier reset
   db.ref('config/lastResetAt').on('value', s => {
-    lastResetEl.textContent = tsToFR(s.val());
+    const ts = s.val(); lastResetEl.textContent = ts ? tsToFR(ts) : '—';
   });
 
-  // === Chargement preview + comptage pixels ===
-  async function loadBoardToPreview(){
-    pctx.clearRect(0,0,preview.width, preview.height);
-    // on dessine en 1:1 (300×300) avec couleur par index
-    const snap = await db.ref('pixels').once('value');
-    const data = snap.val() || {};
-    let count=0;
-    // petit batch pour réactivité
-    const keys = Object.keys(data); let i=0;
-    function chunk(){
-      const t0 = performance.now();
-      while (i<keys.length && performance.now()-t0 < 12){
-        const k = keys[i++]; const v = data[k] || {};
-        const [x,y] = k.split('_').map(Number);
-        const idx = Number.isFinite(+v.color) ? +v.color : 1;
-        const col = colors[idx] || '#FFFFFF';
-        if (x>=0 && x<W && y>=0 && y<H){
-          pctx.fillStyle = col;
-          pctx.fillRect(x, y, 1, 1);
-          count++;
+  // === Preview & Export ===
+  function loadBoardToPreview(){
+    return new Promise(async (resolve, reject) => {
+      try{
+        pctx.clearRect(0,0,preview.width, preview.height);
+        const snap = await db.ref('pixels').once('value');
+        const data = snap.val() || {};
+        let count=0;
+        const keys = Object.keys(data); let i=0;
+
+        function chunk(){
+          const t0 = performance.now();
+          while (i<keys.length && performance.now()-t0 < 12){
+            const k = keys[i++]; const v = data[k] || {};
+            const [x,y] = k.split('_').map(Number);
+            const idx = Number.isFinite(+v.color) ? +v.color : 1;
+            const col = colors[idx] || '#FFFFFF';
+            if (x>=0 && x<W && y>=0 && y<H){
+              pctx.fillStyle = col;
+              pctx.fillRect(x, y, 1, 1);
+              count++;
+            }
+          }
+          if (i<keys.length) requestAnimationFrame(chunk);
+          else { kPixels.textContent = String(count); resolve(); }
         }
-      }
-      if (i<keys.length) requestAnimationFrame(chunk);
-      else kPixels.textContent = String(count);
-    }
-    requestAnimationFrame(chunk);
+        requestAnimationFrame(chunk);
+      }catch(e){ reject(e); }
+    });
   }
 
-  btnRefreshPreview.addEventListener('click', loadBoardToPreview);
+  btnRefreshPreview.addEventListener('click', ()=>{ loadBoardToPreview(); });
 
-  // === Export PNG (download local)
   btnExportPNG.addEventListener('click', async ()=>{
     await loadBoardToPreview();
-    // Convertir le canvas 300×300 (chaque pixel = 1) en blob PNG
+    await new Promise(r => requestAnimationFrame(r));
     preview.toBlob(b=>{
+      if (!b){
+        const a = document.createElement('a');
+        a.href = preview.toDataURL('image/png');
+        a.download = `export_${Date.now()}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        return;
+      }
       const a = document.createElement('a');
       const url = URL.createObjectURL(b);
       a.href = url; a.download = `export_${Date.now()}.png`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 0);
     }, 'image/png');
   });
 
-  // === Archive PNG (upload vers Storage) — nécessite ADMIN_OK + règles Storage
   btnArchivePNG.addEventListener('click', async ()=>{
     if (!ADMIN_OK) return;
     await loadBoardToPreview();
@@ -284,7 +382,7 @@
     }, 'image/png');
   });
 
-  // === Purge (CLEAR) — efface pixels/ + set lastResetAt
+  // === Purge (CLEAR) — efface pixels/ + set lastResetAt ===
   btnClear.addEventListener('click', async ()=>{
     if (!ADMIN_OK || confirmClear.value !== 'CLEAR') return;
     if (!confirm('Confirmer la purge complète du board ?')) return;
@@ -298,8 +396,90 @@
     }
   });
 
-  // Auto-chargement initial
+  // === Historique (onglet) ===
+  const namesByUid = {};
+  function ensureName(uid){
+    if (!uid || namesByUid[uid]) return Promise.resolve();
+    return db.ref(`users/${uid}/name`).once('value').then(s=>{
+      const n = s.val(); if (n && typeof n === 'string') namesByUid[uid] = n;
+    }).catch(()=>{});
+  }
+
+  async function loadHistory(limit=200){
+    historyBody.innerHTML = '';
+    sysStatus.textContent = 'Chargement de l’historique…';
+
+    const snap = await db.ref('history').once('value'); // { "x_y": { pushId: {color,author,ts} } }
+    const root = snap.val() || {};
+    const rows = [];
+
+    const coords = Object.keys(root);
+    let i = 0;
+
+    await new Promise((resolve)=>{
+      function chunk(){
+        const t0 = performance.now();
+        while(i < coords.length && performance.now() - t0 < 14){
+          const key = coords[i++]; // "x_y"
+          const [x,y] = key.split('_').map(Number);
+          const list = root[key] || {};
+          for (const pid in list){
+            const v = list[pid] || {};
+            const ts = typeof v.ts === 'number' ? v.ts : 0;
+            const author = v.author || null;
+            rows.push({ ts, author, x, y });
+          }
+        }
+        if (i < coords.length) requestAnimationFrame(chunk);
+        else resolve();
+      }
+      requestAnimationFrame(chunk);
+    });
+
+    // Trie décroissant & coupe à 'limit'
+    rows.sort((a,b)=> b.ts - a.ts);
+    const take = rows.slice(0, limit);
+
+    // Résoudre pseudos (unique set)
+    const uniqUids = [...new Set(take.map(r=>r.author).filter(Boolean))];
+    await Promise.all(uniqUids.map(ensureName));
+
+    // Render
+    const frag = document.createDocumentFragment();
+    for (const r of take){
+      const tr = document.createElement('tr');
+      const pseudo = r.author ? (namesByUid[r.author] || uidShort(r.author)) : '—';
+      const pos = `(${r.x}, ${r.y})`;
+      const time = r.ts ? onlyTime(r.ts) : '—';
+      const date = r.ts ? onlyDate(r.ts) : '—';
+
+      const td1 = document.createElement('td'); td1.textContent = pseudo;
+      const td2 = document.createElement('td'); td2.textContent = pos;
+      const td3 = document.createElement('td'); td3.textContent = time;
+      const td4 = document.createElement('td'); td4.textContent = date;
+
+      tr.append(td1, td2, td3, td4);
+      frag.appendChild(tr);
+    }
+    historyBody.appendChild(frag);
+    sysStatus.textContent = `Historique chargé (${take.length} entrées).`;
+  }
+
+  btnReloadHistory.addEventListener('click', ()=>{
+    const lim = parseInt(histLimitSel.value, 10) || 200;
+    loadHistory(lim);
+  });
+
+  // Auto-chargements init
   loadBoardToPreview();
+  // (On ne charge l'historique qu'à la demande ou si l’onglet est ouvert)
+  document.querySelector('.tab[data-tab="history"]').addEventListener('click', ()=>{
+    // si vide, on déclenche un premier chargement selon la limite sélectionnée
+    if (!historyBody.children.length){
+      const lim = parseInt(histLimitSel.value, 10) || 200;
+      loadHistory(lim);
+    }
+  });
   </script>
 </body>
 </html>
