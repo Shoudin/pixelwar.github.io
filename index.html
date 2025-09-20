@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <!-- On désactive le zoom natif ; le pinch est géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (zoom centré & doux, scroll borné au canvas)</title>
+  <title>Pixel War — 300×300 (zoom centré & doux, scroll borné)</title>
   <style>
     :root{
       --bar-h: 92px;
@@ -34,7 +34,7 @@
 
     /* Espace interne : un "sizer" définit la vraie zone scrollable après zoom */
     #space{ position: relative; }
-    #sizer{ width: 1px; height: 1px; } /* dimensions mises par JS */
+    #sizer{ width: 1px; height: 1px; } /* dimensions ajustées par JS */
 
     /* La scène (absolue en 0,0 au-dessus du sizer) */
     #stageWrap{
@@ -150,25 +150,14 @@
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
   const firebaseConfig = {
-
-  apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
-
-  authDomain: "shoudinpixelwar.firebaseapp.com",
-
-  databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
-
-  projectId: "shoudinpixelwar",
-
-  storageBucket: "shoudinpixelwar.firebasestorage.app",
-
-  messagingSenderId: "896929635521",
-
-  appId: "1:896929635521:web:357f7b8a29cb5045684840",
-
-  measurementId: "G-FR7NC03RCY"
-
-};
-
+    apiKey: "PASTE_ME",
+    authDomain: "PASTE_ME",
+    databaseURL: "PASTE_ME",
+    projectId: "PASTE_ME",
+    storageBucket: "PASTE_ME",
+    messagingSenderId: "PASTE_ME",
+    appId: "PASTE_ME"
+  };
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db   = firebase.database();
@@ -340,43 +329,32 @@
   // ========= Zoom interne (centré & doux) =========
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
-  const ZOOM_STEP = 1.12;
+  const ZOOM_STEP = 1.12; // plus doux
 
   function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
 
+  // Pas de clampScroll ici pour éviter le "saut" avant recalcule
   function applyZoom(){
     stageWrap.style.transform = `scale(${zoom})`;
     zLevelEl.textContent = `${Math.round(zoom*100)}%`;
-    updateSizer();
-    clampScroll();
+    updateSizer(); // met à jour la zone scrollable réelle
   }
 
-  // Zoom autour d’un point client donné (x,y fenêtre) avec recentrage du scroll
-  function setZoomAround(newZoom, anchorClientX, anchorClientY){
+  // 👉 Zoom centré *réellement* sur le centre visible du viewport (math logique)
+  function setZoomCentered(newZoom){
     const vp = viewport;
-
-    const rectBefore = stageWrap.getBoundingClientRect();
-    const offXBefore = anchorClientX - rectBefore.left + vp.scrollLeft;
-    const offYBefore = anchorClientY - rectBefore.top  + vp.scrollTop;
+    // centre logique (coordonnées non-scalées) actuellement au centre de l'écran
+    const logicalCX = (vp.scrollLeft + vp.clientWidth  / 2) / zoom;
+    const logicalCY = (vp.scrollTop  + vp.clientHeight / 2) / zoom;
 
     zoom = clampZoom(newZoom);
-    applyZoom();
+    applyZoom(); // met à jour transform + sizer
 
-    const rectAfter = stageWrap.getBoundingClientRect();
-    const offXAfter = anchorClientX - rectAfter.left;
-    const offYAfter = anchorClientY - rectAfter.top;
+    // repositionne le scroll pour garder le même centre logique
+    vp.scrollLeft = logicalCX * zoom - vp.clientWidth  / 2;
+    vp.scrollTop  = logicalCY * zoom - vp.clientHeight / 2;
 
-    vp.scrollLeft = offXBefore - offXAfter;
-    vp.scrollTop  = offYBefore - offYAfter;
-    clampScroll();
-  }
-
-  // Zoom centré sur le milieu visible du viewport
-  function setZoomCentered(newZoom){
-    const vpRect = viewport.getBoundingClientRect();
-    const cx = vpRect.left + viewport.clientWidth  / 2;
-    const cy = vpRect.top  + viewport.clientHeight / 2;
-    setZoomAround(newZoom, cx, cy);
+    clampScroll(); // borne aux bords
   }
 
   // Boutons + / −
@@ -401,7 +379,6 @@
     const dy = arr[0].y - arr[1].y;
     return Math.hypot(dx, dy);
   }
-
   function setTouchActionDuringPinch(on){
     viewport.style.touchAction = on ? 'none' : 'pan-x pan-y';
   }
@@ -424,9 +401,9 @@
       const dist = pointersDistance();
       if (dist > 0 && pinchStartDist > 0){
         const factor = dist / pinchStartDist;
-        const eased = Math.pow(factor, 0.85);
+        const eased = Math.pow(factor, 0.85); // pinch moins “violent”
         const newZoom = clampZoom(pinchStartZoom * eased);
-        setZoomCentered(newZoom);
+        setZoomCentered(newZoom);              // 👉 centré écran
         e.preventDefault();
       }
     }
@@ -645,13 +622,16 @@
   // Layout + sizer init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
-  window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); });
+  window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
   window.addEventListener('resize', ()=>{ relayoutAll(); });
   window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
 
   // Recalage si la palette ou la barre du haut change de taille
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
+
+  // === Affichage compteur reset en PAUSE ===
+  document.getElementById('countdown').textContent = 'Pause';
   </script>
 </body>
 </html>
