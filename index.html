@@ -2,9 +2,9 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <!-- On empêche le zoom natif du navigateur ; on gère le pinch en JS -->
+  <!-- On désactive le zoom natif ; le pinch est géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (pinch interne, palette 2 lignes, pause reset)</title>
+  <title>Pixel War — 300×300 (zoom centré & doux, scroll borné au canvas)</title>
   <style>
     :root{
       --bar-h: 92px;
@@ -27,12 +27,22 @@
       overflow: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;   /* sera temporairement mis à none pendant le pinch interne */
+      touch-action: pan-x pan-y;  /* mis à none pendant pinch */
       background: #fff;
       z-index: 1;
     }
 
-    #stageWrap { display:inline-block; transform-origin: top left; }
+    /* Espace interne : un "sizer" définit la vraie zone scrollable après zoom */
+    #space{ position: relative; }
+    #sizer{ width: 1px; height: 1px; } /* dimensions mises par JS */
+
+    /* La scène (absolue en 0,0 au-dessus du sizer) */
+    #stageWrap{
+      position: absolute; top: 0; left: 0;
+      display:inline-block;
+      transform-origin: top left;
+      transition: transform 120ms ease-out; /* fluidité du zoom */
+    }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
     /* Palette bas (2 lignes) + boutons +/− empilés */
@@ -84,8 +94,6 @@
     .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
     .toggle{ display:flex; gap:6px; align-items:center; }
-
-    /* Bouton Main (pan) */
     #panToggle.active { background:#000; color:#fff; }
 
     @media (max-width: 480px){
@@ -116,8 +124,11 @@
 
   <!-- Viewport scrollable borné -->
   <div id="viewport">
-    <div id="stageWrap">
-      <canvas id="board"></canvas>
+    <div id="space">
+      <div id="sizer"></div>
+      <div id="stageWrap">
+        <canvas id="board"></canvas>
+      </div>
     </div>
   </div>
 
@@ -179,15 +190,15 @@
     '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
     '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
     '#E0E0E0','#9E9E9E','#616161',
-    '#FF0000',      // rouge pur
-    '#FFDBAC',      // peau claire
-    '#F1C27D',      // peau moyenne
-    '#E0AC69'       // peau soutenue / ombre
+    '#FF0000', '#FFDBAC', '#F1C27D', '#E0AC69'
   ];
   let selected = 0;
 
   // === Références DOM ===
   const viewport   = document.getElementById('viewport');
+  const space      = document.getElementById('space');
+  const sizer      = document.getElementById('sizer');
+  const stageWrap  = document.getElementById('stageWrap');
   const paletteGrid= document.getElementById('paletteGrid');
   const paletteBar = document.getElementById('paletteBar');
   const uiBar      = document.getElementById('uiBar');
@@ -243,7 +254,7 @@
     ctx.restore();
   }
 
-  // Rendu initial immédiat
+  // Rendu initial
   fullPixels();
   if (localStorage.getItem('pw-show-grid') === '1') {
     showGridChk.checked = true; drawGridOverlay();
@@ -310,55 +321,74 @@
     document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
   }
 
-  // Layout global
-  function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); }
-  buildPalette(); updateCursor();
-  window.addEventListener('load', relayoutAll);
-  window.addEventListener('resize', relayoutAll);
-  window.addEventListener('orientationchange', relayoutAll);
-  setTimeout(relayoutAll, 200);
-  setTimeout(relayoutAll, 800);
-
-  // === Zoom interne (le canvas zoome, pas la page) ===
-  let zoom = 1;
-  function applyZoom(){
-    document.getElementById('stageWrap').style.transform = `scale(${zoom})`;
-    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
+  // ===== Scroll borné : taille réelle du contenu = (W*PIX*zoom) =====
+  function updateSizer(){
+    const scaledW = W * PIX * zoom;
+    const scaledH = H * PIX * zoom;
+    sizer.style.width  = Math.ceil(scaledW) + 'px';
+    sizer.style.height = Math.ceil(scaledH) + 'px';
   }
-  function zoomIn(){  zoom = Math.min(4, zoom * 1.25); applyZoom(); }
-  function zoomOut(){ zoom = Math.max(0.25, zoom / 1.25); applyZoom(); }
-  document.getElementById('zIn').onclick    = zoomIn;
-  document.getElementById('zOut').onclick   = zoomOut;
-  document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); };
-  document.getElementById('dockZIn').onclick  = zoomIn;
-  document.getElementById('dockZOut').onclick = zoomOut;
-  applyZoom();
+  function clampScroll(){
+    const maxLeft = Math.max(0, sizer.offsetWidth  - viewport.clientWidth );
+    const maxTop  = Math.max(0, sizer.offsetHeight - viewport.clientHeight);
+    if (viewport.scrollLeft < 0) viewport.scrollLeft = 0;
+    else if (viewport.scrollLeft > maxLeft) viewport.scrollLeft = maxLeft;
+    if (viewport.scrollTop < 0) viewport.scrollTop = 0;
+    else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
+  }
 
-  // ====== Pinch-to-zoom contrôlé par l'app ======
-  function clampZoom(z){ return Math.max(0.25, Math.min(4, z)); }
+  // ========= Zoom interne (centré & doux) =========
+  let zoom = 1;
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+  const ZOOM_STEP = 1.12;
+
+  function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
+
+  function applyZoom(){
+    stageWrap.style.transform = `scale(${zoom})`;
+    zLevelEl.textContent = `${Math.round(zoom*100)}%`;
+    updateSizer();
+    clampScroll();
+  }
+
+  // Zoom autour d’un point client donné (x,y fenêtre) avec recentrage du scroll
   function setZoomAround(newZoom, anchorClientX, anchorClientY){
-    const stageWrap = document.getElementById('stageWrap');
-    const vp = document.getElementById('viewport');
+    const vp = viewport;
 
-    // Rect avant zoom
     const rectBefore = stageWrap.getBoundingClientRect();
-    const offsetXBefore = anchorClientX - rectBefore.left + vp.scrollLeft;
-    const offsetYBefore = anchorClientY - rectBefore.top  + vp.scrollTop;
+    const offXBefore = anchorClientX - rectBefore.left + vp.scrollLeft;
+    const offYBefore = anchorClientY - rectBefore.top  + vp.scrollTop;
 
-    // Applique le nouveau zoom
     zoom = clampZoom(newZoom);
     applyZoom();
 
-    // Rect après zoom
     const rectAfter = stageWrap.getBoundingClientRect();
-    const offsetXAfter = anchorClientX - rectAfter.left;
-    const offsetYAfter = anchorClientY - rectAfter.top;
+    const offXAfter = anchorClientX - rectAfter.left;
+    const offYAfter = anchorClientY - rectAfter.top;
 
-    // Ajuste le scroll pour garder le point d'ancrage sous les doigts
-    vp.scrollLeft = offsetXBefore - offsetXAfter;
-    vp.scrollTop  = offsetYBefore - offsetYAfter;
+    vp.scrollLeft = offXBefore - offXAfter;
+    vp.scrollTop  = offYBefore - offYAfter;
+    clampScroll();
   }
 
+  // Zoom centré sur le milieu visible du viewport
+  function setZoomCentered(newZoom){
+    const vpRect = viewport.getBoundingClientRect();
+    const cx = vpRect.left + viewport.clientWidth  / 2;
+    const cy = vpRect.top  + viewport.clientHeight / 2;
+    setZoomAround(newZoom, cx, cy);
+  }
+
+  // Boutons + / −
+  function zoomIn(){  setZoomCentered(clampZoom(zoom * ZOOM_STEP)); }
+  function zoomOut(){ setZoomCentered(clampZoom(zoom / ZOOM_STEP)); }
+  document.getElementById('zIn').onclick    = zoomIn;
+  document.getElementById('zOut').onclick   = zoomOut;
+  document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); clampScroll(); };
+  document.getElementById('dockZIn').onclick  = zoomIn;
+  document.getElementById('dockZOut').onclick = zoomOut;
+
+  // ====== Pinch-to-zoom (centré écran & adouci) ======
   const activePointers = new Map();
   let pinchStartDist = 0;
   let pinchStartZoom = 1;
@@ -371,42 +401,32 @@
     const dy = arr[0].y - arr[1].y;
     return Math.hypot(dx, dy);
   }
-  function pointersMidpoint(){
-    const arr = [...activePointers.values()];
-    return { x: (arr[0].x + arr[1].x)/2, y: (arr[0].y + arr[1].y)/2 };
-  }
 
-  const vpEl = document.getElementById('viewport');
   function setTouchActionDuringPinch(on){
-    vpEl.style.touchAction = on ? 'none' : 'pan-x pan-y';
+    viewport.style.touchAction = on ? 'none' : 'pan-x pan-y';
   }
 
-  vpEl.addEventListener('pointerdown', (e)=>{
+  viewport.addEventListener('pointerdown', (e)=>{
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (activePointers.size === 2){
       pinchInProgress = true;
-      const mid = pointersMidpoint();
       pinchStartDist = pointersDistance();
       pinchStartZoom = zoom;
       setTouchActionDuringPinch(true);
-      // Empêche le comportement natif (juste au cas où)
       e.preventDefault();
     }
   }, { passive:false });
 
-  vpEl.addEventListener('pointermove', (e)=>{
+  viewport.addEventListener('pointermove', (e)=>{
     if (!activePointers.has(e.pointerId)) return;
-
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (pinchInProgress && activePointers.size >= 2){
       const dist = pointersDistance();
       if (dist > 0 && pinchStartDist > 0){
         const factor = dist / pinchStartDist;
-        const newZoom = clampZoom(pinchStartZoom * factor);
-        const mid = pointersMidpoint(); // ancre = milieu courant des doigts
-        setZoomAround(newZoom, mid.x, mid.y);
+        const eased = Math.pow(factor, 0.85);
+        const newZoom = clampZoom(pinchStartZoom * eased);
+        setZoomCentered(newZoom);
         e.preventDefault();
       }
     }
@@ -417,11 +437,12 @@
     if (activePointers.size < 2 && pinchInProgress){
       pinchInProgress = false;
       setTouchActionDuringPinch(false);
+      clampScroll();
     }
   }
-  vpEl.addEventListener('pointerup', endPointer, { passive:true });
-  vpEl.addEventListener('pointercancel', endPointer, { passive:true });
-  vpEl.addEventListener('pointerleave', endPointer, { passive:true });
+  viewport.addEventListener('pointerup', endPointer,   { passive:true });
+  viewport.addEventListener('pointercancel', endPointer,{ passive:true });
+  viewport.addEventListener('pointerleave', endPointer, { passive:true });
 
   // === Coordonnées (x,y) avec zoom
   function screenToGrid(clientX, clientY){
@@ -463,8 +484,7 @@
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
 
   function updateCountdown(ts){ countdownEl.textContent = 'Pause'; }
-  // Désactivé en pause :
-  // nextResetRef.on('value', s => updateCountdown(s.val()));
+  // nextResetRef.on('value', s => updateCountdown(s.val())); // en pause
   async function tryReset(){ return; }
 
   async function tryArchive(){
@@ -548,7 +568,7 @@
     });
 
     // Pose de pixel (avec zoom) + incrément compteur
-    let panActive = false; // sera géré plus bas par le bouton Main
+    let panActive = false; // géré par le bouton Main
     canvas.addEventListener('click', async (e)=>{
       if (panActive) return; // en mode Main, pas de pose
       const rect = canvas.getBoundingClientRect();
@@ -607,6 +627,7 @@
       const dy = e.clientY - startY;
       viewport.scrollLeft = startScrollLeft - dx;
       viewport.scrollTop  = startScrollTop  - dy;
+      clampScroll();
       e.preventDefault();
     });
     function endPan(e){
@@ -614,15 +635,23 @@
       isDragging = false;
       try { viewport.releasePointerCapture(e.pointerId); } catch {}
       viewport.style.cursor = panActive ? 'grab' : 'default';
+      clampScroll();
     }
     viewport.addEventListener('pointerup', endPan);
     viewport.addEventListener('pointercancel', endPan);
     viewport.addEventListener('pointerleave', endPan);
   });
 
-  // Relayout si la palette ou la barre du haut change de taille
-  new ResizeObserver(()=>layoutViewport()).observe(paletteBar);
-  new ResizeObserver(()=>layoutViewport()).observe(uiBar);
+  // Layout + sizer init
+  function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
+  buildPalette(); updateCursor();
+  window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); });
+  window.addEventListener('resize', ()=>{ relayoutAll(); });
+  window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
+
+  // Recalage si la palette ou la barre du haut change de taille
+  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
+  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
   </script>
 </body>
 </html>
