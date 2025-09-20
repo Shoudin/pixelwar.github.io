@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
+  <!-- Zoom natif désactivé ; pinch géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Pixel War — 300×300 (zoom centré, scroll borné, Trackeur)</title>
   <style>
@@ -16,9 +17,9 @@
     }
     * { box-sizing: border-box; }
     html, body {
-      height: 100dvh;
+      height: 100dvh;               /* corrige la “barre blanche” sur Android/OnePlus */
       min-height: 100dvh;
-      height: -webkit-fill-available;
+      height: -webkit-fill-available; /* fallback iOS */
       overflow: hidden;
       background:#fff;
     }
@@ -27,24 +28,29 @@
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
+    /* Viewport scrollable encadré entre le header et la palette */
     #viewport{
       position: fixed; left: 0; right: 0;
       overflow: auto; overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;
+      touch-action: pan-x pan-y;           /* sera mis à none pendant le pinch interne */
       background: #fff; z-index: 1;
     }
 
+    /* Contenu scrollable : sizer = taille réelle après zoom */
     #space{ position: relative; }
-    #sizer{ width: 1px; height: 1px; }
+    #sizer{ width: 1px; height: 1px; }     /* dimensions ajustées par JS */
 
+    /* Scène */
     #stageWrap{
       position: absolute; top: 0; left: 0;
-      display:inline-block; transform-origin: top left;
-      transition: transform 120ms ease-out;
+      display:inline-block;
+      transform-origin: top left;
+      transition: transform 120ms ease-out; /* fluidité du zoom */
     }
     #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
+    /* Palette bas (2 lignes) + boutons +/− empilés (ou dessous en mobile étroit) */
     #paletteBar{
       position: fixed; left: 50%; transform: translateX(-50%);
       bottom: calc(8px + var(--safe-bottom));
@@ -70,7 +76,6 @@
     .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
     .toggle{ display:flex; gap:6px; align-items:center; }
-    #panToggle.active { background:#000; color:#fff; }
 
     /* Tip flottant (Trackeur) */
     #trackerTip{
@@ -89,6 +94,7 @@
     #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
     #trackerTip .meta{ opacity: .8; }
 
+    /* Boutons palette visibles sur écrans très étroits */
     @media (max-width: 420px){
       #paletteBar{ grid-template-columns: 1fr; }
       .dockZoom{ flex-direction: row; }
@@ -108,11 +114,10 @@
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
     <div class="zoomControls">
-      <button id="zOut" title="Zoom -">−</button>
+      <button id="zOut"  title="Zoom -">−</button>
       <div class="level" id="zLevel">100%</div>
-      <button id="zIn" title="Zoom +">+</button>
+      <button id="zIn"   title="Zoom +">+</button>
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
-      <button id="panToggle" title="Activer/Désactiver la main">Main</button>
       <button id="trackerToggle" title="Activer/Désactiver le menu flottant Trackeur">Trackeur</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
@@ -120,6 +125,7 @@
     </label>
   </div>
 
+  <!-- Viewport scrollable borné -->
   <div id="viewport">
     <div id="space">
       <div id="sizer"></div>
@@ -129,6 +135,7 @@
     </div>
   </div>
 
+  <!-- Palette bas : grille 2 lignes + boutons -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
     <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
@@ -179,13 +186,13 @@
   // === Paramètres mosaïque ===
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const W = 300, H = 300;
-  let PIX = IS_MOBILE ? 8 : 10;
+  let PIX = IS_MOBILE ? 8 : 10; // plus léger sur mobile
   const canvas = document.getElementById('board');
   canvas.width  = W * PIX;
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
 
-  // === Palette ===
+  // === Palette (ordre + rouge + 3 peaux) ===
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
@@ -198,7 +205,6 @@
 
   // === Références DOM ===
   const viewport   = document.getElementById('viewport');
-  const space      = document.getElementById('space');
   const sizer      = document.getElementById('sizer');
   const stageWrap  = document.getElementById('stageWrap');
   const paletteGrid= document.getElementById('paletteGrid');
@@ -210,7 +216,6 @@
   const coordsEl   = document.getElementById('coords');
   const zLevelEl   = document.getElementById('zLevel');
   const showGridChk= document.getElementById('showGridChk');
-  const panToggle  = document.getElementById('panToggle');
   const trackerToggle = document.getElementById('trackerToggle');
   const trackerTip = document.getElementById('trackerTip');
   const trackerXY  = trackerTip.querySelector('.xy');
@@ -237,7 +242,8 @@
     const palRect = paletteBar.getBoundingClientRect();
     const vv = window.visualViewport;
     const screenH = vv ? vv.height : window.innerHeight;
-    const bottomSpace = Math.round((screenH - palRect.top) + 8 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0));
+    const safeBtm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0;
+    const bottomSpace = Math.round((screenH - palRect.top) + 8 + safeBtm);
     viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
     viewport.style.bottom = bottomSpace + 'px';
   }
@@ -250,6 +256,7 @@
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
 
+  // Grille overlay
   function drawGridOverlay() {
     const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
     ctx.save(); ctx.lineWidth = 1;
@@ -278,6 +285,7 @@
     ctx.restore();
   }
 
+  // Rendu initial
   fullPixels();
   if (localStorage.getItem('pw-show-grid') === '1') { showGridChk.checked = true; drawGridOverlay(); }
   else { showGridChk.checked = false; }
@@ -446,13 +454,12 @@
       const ago = when ? `, ${timeAgoFR(when)}` : '';
       trackerMeta.textContent = `${who}${ago}`;
       trackerTip.style.display = 'block';
-      // positionner un peu au-dessus et à droite du doigt/souris
+      // positionner près du pointeur
       const offsetX = 14, offsetY = 18;
       let tx = e.clientX + offsetX, ty = e.clientY - offsetY;
-      // éviter de sortir de l'écran
       const rect = trackerTip.getBoundingClientRect();
       if (tx + rect.width > window.innerWidth - 6) tx = window.innerWidth - rect.width - 6;
-      if (ty - rect.height < 6) ty = e.clientY + offsetY; // bas si pas de place en haut
+      if (ty - rect.height < 6) ty = e.clientY + offsetY;
       trackerTip.style.left = tx + 'px';
       trackerTip.style.top  = ty + 'px';
     } else {
@@ -600,9 +607,7 @@
     });
 
     // Pose de pixel (avec auteur + ts + historique)
-    let panActive = false;
     canvas.addEventListener('click', async (e)=>{
-      if (panActive) return;
       const rect = canvas.getBoundingClientRect();
       const localX = (e.clientX - rect.left) / zoom;
       const localY = (e.clientY - rect.top)  / zoom;
@@ -624,7 +629,7 @@
       }
     });
 
-    // Raccourci Shift + molette (desktop)
+    // Raccourci Shift + molette (desktop) = changer de couleur
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
@@ -637,56 +642,27 @@
 
     // Archives (actives)
     setInterval(tryArchive, 10*1000);
-
-    // Mode MAIN (pan)
-    let isDragging = false, startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
-    function setPanActive(on){
-      panActive = on;
-      panToggle.classList.toggle('active', panActive);
-      viewport.style.cursor = panActive ? 'grab' : 'default';
-    }
-    panToggle.addEventListener('click', ()=> setPanActive(!panActive) );
-    viewport.addEventListener('pointerdown', (e)=>{
-      if (!panActive) return;
-      isDragging = true;
-      viewport.setPointerCapture(e.pointerId);
-      startX = e.clientX; startY = e.clientY;
-      startScrollLeft = viewport.scrollLeft; startScrollTop  = viewport.scrollTop;
-      viewport.style.cursor = 'grabbing'; e.preventDefault();
-    });
-    viewport.addEventListener('pointermove', (e)=>{
-      if (!panActive || !isDragging) return;
-      const dx = e.clientX - startX, dy = e.clientY - startY;
-      viewport.scrollLeft = startScrollLeft - dx;
-      viewport.scrollTop  = startScrollTop  - dy;
-      clampScroll(); e.preventDefault();
-    });
-    function endPan(e){
-      if (!isDragging) return;
-      isDragging = false;
-      try { viewport.releasePointerCapture(e.pointerId); } catch {}
-      viewport.style.cursor = panActive ? 'grab' : 'default';
-      clampScroll();
-    }
-    viewport.addEventListener('pointerup', endPan);
-    viewport.addEventListener('pointercancel', endPan);
-    viewport.addEventListener('pointerleave', endPan);
   });
 
   // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
+
+  // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
   if (window.visualViewport){
     visualViewport.addEventListener('resize', layoutViewport);
     visualViewport.addEventListener('scroll',  layoutViewport);
   }
+
   window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
   window.addEventListener('resize', ()=>{ relayoutAll(); });
   window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
 
+  // Recalage si la palette ou la barre du haut change de taille
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
 
+  // Compte à rebours en pause
   document.getElementById('countdown').textContent = 'Pause';
   </script>
 </body>
