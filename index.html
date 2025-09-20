@@ -2,15 +2,16 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <!-- On stabilise l'UI mobile : on évite le pinch-zoom de la PAGE ; on zoome le canvas via les boutons -->
+  <!-- UI mobile stable : on zoome le canvas (pas la page) -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (palette bas, Firebase, reset, archives)</title>
+  <title>Pixel War — 300×300 (palette 2 lignes responsive)</title>
   <style>
-    :root {
-      --bar-h: 72px;      /* hauteur de la barre palette */
-      --bar-pad: 10px;    /* padding interne */
-      --sw: 28px;         /* taille d’un swatch */
-      --gap: 8px;         /* espace entre swatches */
+    :root{
+      --bar-h: 92px;          /* hauteur approximative (ajustée par JS si besoin) */
+      --bar-pad: 10px;
+      --gap: 8px;             /* espacement entre cases  */
+      --sw: 28px;             /* taille d’une case (fixée par JS) */
+      --cols: 14;             /* nb de colonnes (fixé par JS) */
     }
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
@@ -18,77 +19,66 @@
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
-    /* Zone scène (canvas) */
+    /* Scène */
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Marge en bas pour ne pas cacher le canvas sous la barre palette */
+    /* Laisse de la place à la barre palette */
     .bottomSpacer { height: calc(var(--bar-h) + 20px); }
 
-    /* Palette horizontale fixée en bas, centrée */
-    #paletteBar {
+    /* Palette bas centrée : rail en grille 2 lignes + boutons +/− */
+    #paletteBar{
       position: fixed;
       left: 50%;
       transform: translateX(-50%);
       bottom: 8px;
-      height: var(--bar-h);
       max-width: min(100vw - 16px, 1100px);
       padding: var(--bar-pad);
-      border: 1px solid #333;
-      border-radius: 14px;
-      background: #fff;
+      border: 1px solid #333; border-radius: 14px; background: #fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
       display: grid;
-      grid-template-columns: auto auto; /* rail + boutons */
+      grid-template-columns: 1fr auto;   /* paletteGrid | boutons */
+      align-items: center;
       gap: 10px;
-      align-items: center;
       z-index: 10;
-      overflow: hidden;
     }
-    /* Rail scrollable horizontal de swatches */
-    #paletteRail {
-      display: inline-flex;
-      gap: var(--gap);
-      align-items: center;
-      overflow-x: auto;
-      overflow-y: hidden;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-      max-width: 100%;
-    }
-    #paletteRail::-webkit-scrollbar { height: 8px; }
-    #paletteRail::-webkit-scrollbar-thumb { background: #bbb; border-radius: 8px; }
-    #paletteRail::-webkit-scrollbar-track { background: #eee; border-radius: 8px; }
 
-    .sw {
+    /* Grille 2 lignes, nombre de colonnes et taille des cases pilotés par JS */
+    #paletteGrid{
+      display: grid;
+      grid-auto-flow: row dense;
+      grid-template-columns: repeat(var(--cols), var(--sw));
+      grid-auto-rows: var(--sw);
+      row-gap: var(--gap);
+      column-gap: var(--gap);
+      place-items: center;
+    }
+
+    .sw{
       width: var(--sw);
       height: var(--sw);
       border: 1px solid #000;
       border-radius: 6px;
       cursor: pointer;
-      flex: 0 0 auto;
     }
-    .activeSw { outline: 2px solid #000; outline-offset: 2px; }
+    .activeSw{ outline: 2px solid #000; outline-offset: 2px; }
 
-    /* Boutons + / − dans la barre (sans pourcentage ici) */
-    .dockZoom { display:flex; gap:8px; }
-    .dockZoom button {
+    .dockZoom{ display:flex; gap:8px; align-items:center; justify-content:center; }
+    .dockZoom button{
       width: 40px; height: 34px;
       border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
       font-size: 18px; line-height: 1;
     }
 
-    /* Contrôles de zoom en haut (avec %), optionnels */
-    .zoomControls { display:flex; gap:8px; align-items:center; }
-    .zoomControls button { cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
-    .zoomControls .level { min-width: 48px; text-align:center; font-variant-numeric: tabular-nums; }
+    .zoomControls{ display:flex; gap:8px; align-items:center; }
+    .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
+    .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
+    .toggle{ display:flex; gap:6px; align-items:center; }
 
-    .toggle { display:flex; gap:6px; align-items:center; }
-
-    @media (max-width: 480px) {
-      :root { --bar-h: 64px; --sw: 24px; --gap: 6px; }
-      body { margin: 12px; }
-      .dockZoom button { width: 36px; height: 32px; }
+    @media (max-width: 480px){
+      :root{ --gap: 6px; }
+      body{ margin: 12px; }
+      .dockZoom button{ width: 36px; height: 32px; }
     }
   </style>
 </head>
@@ -106,8 +96,7 @@
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
-      <input type="checkbox" id="showGridChk">
-      Grille
+      <input type="checkbox" id="showGridChk"> Grille
     </label>
   </div>
 
@@ -117,9 +106,9 @@
 
   <div class="bottomSpacer" aria-hidden="true"></div>
 
-  <!-- Palette horizontale, centrée en bas, avec boutons + / − -->
+  <!-- Palette bas : grille 2 lignes + boutons -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
-    <div id="paletteRail"></div>
+    <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
       <button id="dockZOut" title="Zoom -">−</button>
       <button id="dockZIn"  title="Zoom +">+</button>
@@ -134,7 +123,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-const firebaseConfig = {
+  const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -168,20 +157,22 @@ const firebaseConfig = {
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
 
-  // === Palette (ordre demandé + rouge franc) ===
- const colors = [
-  '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
-  '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-  '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-  '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-  '#E0E0E0','#9E9E9E','#616161','#FF0000','#FFDBAC',
-  '#F1C27D', '#E0AC69'
-];
-
+  // === Palette (ordre demandé + rouge + 3 peaux) ===
+  const colors = [
+    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
+    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
+    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
+    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
+    '#E0E0E0','#9E9E9E','#616161',
+    '#FF0000',      // rouge pur
+    '#FFDBAC',      // peau claire
+    '#F1C27D',      // peau moyenne
+    '#E0AC69'       // peau soutenue / ombre
+  ];
   let selected = 0;
 
   // === Références DOM ===
-  const rail        = document.getElementById('paletteRail');
+  const paletteGrid = document.getElementById('paletteGrid');
   const countdownEl = document.getElementById('countdown');
   const onlineEl    = document.getElementById('onlineCount');
   const clickEl     = document.getElementById('clickCount');
@@ -200,26 +191,22 @@ const firebaseConfig = {
     const bold = 'rgba(0,0,0,0.35)';
     ctx.save(); ctx.lineWidth = 1;
 
-    // Verticales
     ctx.beginPath(); ctx.strokeStyle = thin;
     for (let x=0; x<=W; x++){
       const xx = x*PIX + 0.5;
       if (x % 10 === 0) {
-        ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = bold;
+        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
         ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); ctx.stroke();
         ctx.beginPath(); ctx.strokeStyle = thin;
       } else { ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); }
     }
     ctx.stroke();
 
-    // Horizontales
     ctx.beginPath(); ctx.strokeStyle = thin;
     for (let y=0; y<=H; y++){
       const yy = y*PIX + 0.5;
       if (y % 10 === 0) {
-        ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = bold;
+        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
         ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); ctx.stroke();
         ctx.beginPath(); ctx.strokeStyle = thin;
       } else { ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); }
@@ -228,22 +215,17 @@ const firebaseConfig = {
     ctx.restore();
   }
 
-  // --- Rendu initial IMMÉDIAT (avant Firebase) ---
-  // On trace tout de suite une mosaïque blanche (puis la grille si cochée)
+  // Rendu initial immédiat
   fullPixels();
   if (localStorage.getItem('pw-show-grid') === '1') {
-    showGridChk.checked = true;
-    drawGridOverlay();
-  } else {
-    showGridChk.checked = false;
-  }
+    showGridChk.checked = true; drawGridOverlay();
+  } else { showGridChk.checked = false; }
   showGridChk.addEventListener('change', ()=>{
     localStorage.setItem('pw-show-grid', showGridChk.checked ? '1' : '0');
-    fullPixels();
-    if (showGridChk.checked) drawGridOverlay();
+    fullPixels(); if (showGridChk.checked) drawGridOverlay();
   });
 
-  // === Curseur coloré (SVG data URL) ===
+  // Curseur coloré
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -258,25 +240,67 @@ const firebaseConfig = {
   canvas.addEventListener('mouseenter', updateCursor);
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
 
-  // === Palette (barre du bas) ===
-  function renderPalette() {
-    rail.innerHTML = '';
+  // Palette : 2 LIGNES, taille auto
+  function buildPalette(){
+    paletteGrid.innerHTML = '';
     colors.forEach((c,i)=>{
       const sw = document.createElement('div');
       sw.className = 'sw'; sw.style.background = c; sw.title = c;
       if (i===selected) sw.classList.add('activeSw');
       sw.onclick = ()=>{
         selected = i;
-        [...rail.children].forEach(el => el.classList.remove('activeSw'));
+        [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
         sw.classList.add('activeSw');
         updateCursor();
       };
-      rail.appendChild(sw);
+      paletteGrid.appendChild(sw);
     });
   }
-  renderPalette(); updateCursor();
 
-  // === Zoom (le canvas zoome, pas la page) ===
+  function layoutPaletteTwoRows(){
+    // Nombre de colonnes = moitiée arrondie haut
+    const total = colors.length;                // 27
+    const cols  = Math.ceil(total / 2);         // 14
+    // Largeur disponible = largeur de la 1ère colonne de #paletteBar
+    const bar   = document.getElementById('paletteBar');
+    // calc largeur colonne palette (la grille) ≈ largeur totale - largeur boutons - gaps
+    const btns  = bar.querySelector('.dockZoom');
+    const barRect = bar.getBoundingClientRect();
+    const btnRect = btns.getBoundingClientRect();
+    const pad = 2*parseFloat(getComputedStyle(bar).paddingLeft);
+    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
+
+    const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
+    // Taille swatch = (available - gaps) / cols
+    const sw = Math.floor((available - gap*(cols-1)) / cols);
+
+    // Limites raisonnables selon device
+    const minSw = 18;                      // mini lisible
+    const maxSw = IS_MOBILE ? 28 : 32;     // un peu plus grand sur desktop
+    const clamped = Math.max(minSw, Math.min(maxSw, sw));
+
+    // Met à jour les variables CSS
+    bar.style.setProperty('--cols', cols);
+    bar.style.setProperty('--sw', clamped + 'px');
+
+    // Ajuste la hauteur globale de la barre (≈ 2 lignes + gaps + paddings)
+    const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
+    const barH = (clamped*2) + gap + barPad; // 2 lignes + 1 gap vertical
+    document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
+  }
+
+  // Construire & poser la palette
+  buildPalette();
+  updateCursor();
+  // Layout initial + sur resize/orientation
+  function relayoutAll(){ layoutPaletteTwoRows(); }
+  window.addEventListener('load', relayoutAll);
+  window.addEventListener('resize', relayoutAll);
+  window.addEventListener('orientationchange', relayoutAll);
+  setTimeout(relayoutAll, 200);
+  setTimeout(relayoutAll, 800);
+
+  // Zoom (canvas, pas la page)
   let zoom = 1;
   function applyZoom(){ document.getElementById('stageWrap').style.transform = `scale(${zoom})`; zLevelEl.textContent = `${Math.round(zoom*100)}%`; }
   function zoomIn(){  zoom = Math.min(4, zoom * 1.25); applyZoom(); }
@@ -288,8 +312,8 @@ const firebaseConfig = {
   document.getElementById('dockZOut').onclick = zoomOut;
   applyZoom();
 
-  // === Coordonnées (x,y) — tient compte du zoom ===
-  function screenToGrid(clientX, clientY) {
+  // Coordonnées (x,y) avec zoom
+  function screenToGrid(clientX, clientY){
     const rect = canvas.getBoundingClientRect();
     const localX = (clientX - rect.left) / zoom;
     const localY = (clientY - rect.top)  / zoom;
@@ -302,8 +326,8 @@ const firebaseConfig = {
     coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
   });
 
-  // === Storage helpers (PNG) ===
-  function formatParisFilename(prefix="snapshot", ext="png") {
+  // Storage helpers (PNG)
+  function formatParisFilename(prefix="snapshot", ext="png"){
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const parts = fmt.formatToParts(new Date());
     const get=t=>parts.find(p=>p.type===t)?.value||'';
@@ -311,7 +335,7 @@ const firebaseConfig = {
     return `${prefix}_${stamp}.${ext}`;
   }
   function canvasToBlobPNG(cnv){ return new Promise(res => cnv.toBlob(b => res(b), 'image/png')); }
-  async function uploadSnapshot(folder, filename) {
+  async function uploadSnapshot(folder, filename){
     await new Promise(r => requestAnimationFrame(r));
     const blob = await canvasToBlobPNG(canvas);
     const path = `${folder}/${filename}`;
@@ -322,14 +346,10 @@ const firebaseConfig = {
     return { path, url };
   }
 
-  // === Reset & archive coordination ===
-  const PERIOD_RESET   = 48*60*60*1000;  // 48h
-  const PERIOD_ARCHIVE = 60*1000;        // 1 min
-  const nextResetRef   = db.ref('config/nextResetAt');
-  const lastResetRef   = db.ref('config/lastResetAt');
-  const nextArchRef    = db.ref('config/nextArchiveAt');
-  const lastArchRef    = db.ref('config/lastArchiveAt');
-
+  // Reset & archive
+  const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
+  const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
+  const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
   function updateCountdown(ts){
     if (!ts) { countdownEl.textContent = '—'; return; }
     const left = ts - Date.now();
@@ -356,7 +376,6 @@ const firebaseConfig = {
       fullPixels(); if (showGridChk.checked) drawGridOverlay();
     }
   }
-
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
     const res = await nextArchRef.transaction(cur => {
@@ -373,18 +392,16 @@ const firebaseConfig = {
     }
   }
 
-  // === Présence + compteur clics ===
+  // Présence + compteur clics
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
 
-  // Auth anonyme + présence + listeners
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
     const uid = user.uid;
 
-    // Présence (différentiel)
     const myPresenceRef = presenceRootRef.child(uid);
     infoConnectedRef.on('value', snap => {
       if (snap.val() === true) {
@@ -392,7 +409,7 @@ const firebaseConfig = {
         myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
       }
     });
-    // Compteur connectés via child_added/removed
+
     let online = 0;
     presenceRootRef.once('value').then(s => {
       online = s.numChildren(); onlineEl.textContent = String(online); onlineEl.classList.remove('dim');
@@ -400,19 +417,16 @@ const firebaseConfig = {
     presenceRootRef.on('child_added',  ()=>{ online++; onlineEl.textContent = String(online); });
     presenceRootRef.on('child_removed', ()=>{ online = Math.max(0, online-1); onlineEl.textContent = String(online); });
 
-    // Compteur clics (total)
     clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
 
-    // Pixels live
     const pixelsRef = db.ref('pixels');
-
-    // Charge l'état existant (dessin progressif pour mobile)
+    // Chargement progressif
     pixelsRef.once('value').then(snap => {
       const val = snap.val() || {};
       let i = 0; const keys = Object.keys(val);
       function chunk() {
         const t0 = performance.now();
-        while (i < keys.length && performance.now() - t0 < 12) { // ~12ms par frame
+        while (i < keys.length && performance.now() - t0 < 12) {
           const key = keys[i++]; const [x,y] = key.split('_').map(Number);
           const col = Number.isFinite(+val[key].color) ? +val[key].color : 1;
           if (x>=0 && x<W && y>=0 && y<H) grid[y][x] = col;
@@ -423,28 +437,32 @@ const firebaseConfig = {
       requestAnimationFrame(chunk);
     });
 
-    // Écoute des changements en temps réel
-    let gridNeedsOverlay = false;
-    function scheduleOverlay() {
+    // Temps réel
+    let overlayQueued = false;
+    function queueOverlay(){
       if (!showGridChk.checked) return;
-      if (gridNeedsOverlay) return;
-      gridNeedsOverlay = true;
-      requestAnimationFrame(()=>{ drawGridOverlay(); gridNeedsOverlay = false; });
+      if (overlayQueued) return;
+      overlayQueued = true;
+      requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
     }
     pixelsRef.on('child_added', snap => {
       const [x,y] = snap.key.split('_').map(Number);
       const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); scheduleOverlay(); }
+      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
     });
     pixelsRef.on('child_changed', snap => {
       const [x,y] = snap.key.split('_').map(Number);
       const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); scheduleOverlay(); }
+      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
     });
 
-    // Pose de pixel (corrigée pour le zoom) + incrément compteur
+    // Pose de pixel (avec zoom) + incrément compteur
     canvas.addEventListener('click', async (e)=>{
-      const {x,y} = screenToGrid(e.clientX, e.clientY);
+      const rect = canvas.getBoundingClientRect();
+      const localX = (e.clientX - rect.left) / zoom;
+      const localY = (e.clientY - rect.top)  / zoom;
+      const x = Math.floor(localX / PIX);
+      const y = Math.floor(localY / PIX);
       if (x<0||x>=W||y<0||y>=H) return;
       if (selected < 0 || selected >= colors.length) return;
       try {
@@ -453,46 +471,26 @@ const firebaseConfig = {
       } catch (err) { console.error('write pixel / click count error', err); }
     });
 
-    // Raccourci Shift + molette (desktop) = changer de couleur
+    // Shift + molette (desktop) = changer de couleur
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
         if (e.deltaY > 0) selected = (selected + 1) % colors.length;
         else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
-        // update visuel palette
-        [...rail.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx===selected));
+        [...paletteGrid.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx===selected));
         updateCursor();
       }
     }, { passive: false });
 
     // Tickers
     tryReset();
-    setInterval(tryReset,   60*1000);  // check reset chaque minute
-    setInterval(tryArchive, 10*1000);  // check archive toutes les 10s (fenêtre 60s)
-    setInterval(async ()=>{            // countdown
+    setInterval(tryReset,   60*1000);
+    setInterval(tryArchive, 10*1000);
+    setInterval(async ()=>{
       const snap = await nextResetRef.get();
       updateCountdown(snap.val());
     }, 1000);
   });
-
-  // Palette UI (barre du bas)
-  function renderPalette() {
-    rail.innerHTML = '';
-    colors.forEach((c,i)=>{
-      const sw = document.createElement('div');
-      sw.className = 'sw'; sw.style.background = c; sw.title = c;
-      if (i===selected) sw.classList.add('activeSw');
-      sw.onclick = ()=>{
-        selected = i;
-        [...rail.children].forEach(el => el.classList.remove('activeSw'));
-        sw.classList.add('activeSw');
-        updateCursor();
-      };
-      rail.appendChild(sw);
-    });
-  }
-  // (re)render déjà appelé plus haut, gardé ici si besoin
   </script>
 </body>
 </html>
-
