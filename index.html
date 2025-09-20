@@ -2,9 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <!-- On désactive le zoom natif ; le pinch est géré par l’app -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (fix OnePlus: safe-area + boutons palette)</title>
+  <title>Pixel War — 300×300 (zoom centré, scroll borné, Trackeur)</title>
   <style>
     :root{
       --bar-h: 92px;
@@ -12,99 +11,60 @@
       --gap: 8px;
       --sw: 28px;
       --cols: 14;
-      /* Safe area (Android/iOS) */
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-top: env(safe-area-inset-top, 0px);
     }
     * { box-sizing: border-box; }
-    /* Utiliser la vraie hauteur visuelle (corrige la “barre blanche” sur Android/OnePlus) */
     html, body {
-      height: 100dvh;          /* nouvelle unité : hauteur viewport visuelle */
+      height: 100dvh;
       min-height: 100dvh;
-      /* fallbacks */
       height: -webkit-fill-available;
       overflow: hidden;
       background:#fff;
     }
-    body {
-      font-family: system-ui, sans-serif;
-      margin: 16px;
-      padding-bottom: var(--safe-bottom); /* évite recouvrement par zone gestuelle */
-    }
+    body { font-family: system-ui, sans-serif; margin: 16px; padding-bottom: var(--safe-bottom); }
     h1 { margin: 0 0 8px 0; font-size: 18px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
-    /* Viewport scrollable encadré entre le header et la palette */
     #viewport{
-      position: fixed;
-      left: 0; right: 0;
-      overflow: auto;
-      overscroll-behavior: contain;
+      position: fixed; left: 0; right: 0;
+      overflow: auto; overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;  /* mis à none pendant pinch */
-      background: #fff;
-      z-index: 1;
+      touch-action: pan-x pan-y;
+      background: #fff; z-index: 1;
     }
 
-    /* Espace interne : un "sizer" définit la vraie zone scrollable après zoom */
     #space{ position: relative; }
-    #sizer{ width: 1px; height: 1px; } /* dimensions ajustées par JS */
+    #sizer{ width: 1px; height: 1px; }
 
-    /* La scène (absolue en 0,0 au-dessus du sizer) */
     #stageWrap{
       position: absolute; top: 0; left: 0;
-      display:inline-block;
-      transform-origin: top left;
-      transition: transform 120ms ease-out; /* fluidité du zoom */
+      display:inline-block; transform-origin: top left;
+      transition: transform 120ms ease-out;
     }
-    #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
+    #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette bas (2 lignes) + boutons +/− empilés (ou dessous en mobile étroit) */
     #paletteBar{
-      position: fixed;
-      left: 50%;
-      transform: translateX(-50%);
-      /* tenir compte de la safe area pour éviter une “bande blanche” */
+      position: fixed; left: 50%; transform: translateX(-50%);
       bottom: calc(8px + var(--safe-bottom));
       max-width: min(100vw - 16px, 1100px);
       padding: var(--bar-pad);
-      border: 1px solid #333; border-radius: 14px; background: #fff;
+      border:1px solid #333; border-radius:14px; background:#fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
-      display: grid;
-      grid-template-columns: 1fr auto; /* grille couleurs | dock boutons */
-      align-items: center;
-      gap: 10px;
-      z-index: 10;
+      display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; z-index:10;
     }
-
     #paletteGrid{
-      display: grid;
-      grid-auto-flow: row dense;
+      display:grid; grid-auto-flow: row dense;
       grid-template-columns: repeat(var(--cols), var(--sw));
       grid-auto-rows: var(--sw);
-      row-gap: var(--gap);
-      column-gap: var(--gap);
-      place-items: center;
+      row-gap: var(--gap); column-gap: var(--gap); place-items:center;
     }
-    .sw{
-      width: var(--sw);
-      height: var(--sw);
-      border: 1px solid #000;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    .activeSw{ outline: 2px solid #000; outline-offset: 2px; }
+    .sw{ width:var(--sw); height:var(--sw); border:1px solid #000; border-radius:6px; cursor:pointer; }
+    .activeSw{ outline:2px solid #000; outline-offset:2px; }
 
-    .dockZoom{
-      display:flex; flex-direction: column; gap:6px;
-      align-items:center; justify-content:center;
-    }
-    .dockZoom button{
-      width: 36px; height: 28px;
-      border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
-      font-size: 16px; line-height: 1;
-    }
+    .dockZoom{ display:flex; flex-direction:column; gap:6px; align-items:center; justify-content:center; }
+    .dockZoom button{ width:36px; height:28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; font-size:16px; line-height:1; }
 
     .zoomControls{ display:flex; gap:8px; align-items:center; }
     .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
@@ -112,12 +72,27 @@
     .toggle{ display:flex; gap:6px; align-items:center; }
     #panToggle.active { background:#000; color:#fff; }
 
-    /* ✅ Sur écrans très étroits (ex: OnePlus UI/zoom), on met les boutons sous la palette pour qu’ils restent visibles */
+    /* Tip flottant (Trackeur) */
+    #trackerTip{
+      position: fixed; z-index: 20;
+      pointer-events: none;
+      background: rgba(255,255,255,0.96);
+      border: 1px solid rgba(0,0,0,0.25);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.12);
+      transform: translate(-50%, -120%);
+      display: none;
+      white-space: nowrap;
+    }
+    #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
+    #trackerTip .meta{ opacity: .8; }
+
     @media (max-width: 420px){
       #paletteBar{ grid-template-columns: 1fr; }
       .dockZoom{ flex-direction: row; }
     }
-
     @media (max-width: 480px){
       :root{ --gap: 6px; }
       body{ margin: 12px; }
@@ -133,18 +108,18 @@
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
     <div class="zoomControls">
-      <button id="zOut"  title="Zoom -">−</button>
+      <button id="zOut" title="Zoom -">−</button>
       <div class="level" id="zLevel">100%</div>
-      <button id="zIn"   title="Zoom +">+</button>
+      <button id="zIn" title="Zoom +">+</button>
       <button id="zReset" title="Réinitialiser le zoom">Reset</button>
       <button id="panToggle" title="Activer/Désactiver la main">Main</button>
+      <button id="trackerToggle" title="Activer/Désactiver le menu flottant Trackeur">Trackeur</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
       <input type="checkbox" id="showGridChk"> Grille
     </label>
   </div>
 
-  <!-- Viewport scrollable borné -->
   <div id="viewport">
     <div id="space">
       <div id="sizer"></div>
@@ -154,7 +129,6 @@
     </div>
   </div>
 
-  <!-- Palette bas : grille 2 lignes + boutons (toujours visibles) -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
     <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
@@ -162,6 +136,12 @@
       <button id="dockZOut" title="Zoom -">−</button>
     </div>
   </aside>
+
+  <!-- Tip flottant Trackeur -->
+  <div id="trackerTip" role="status" aria-live="polite">
+    <span class="xy">(—, —)</span>
+    <span class="meta"></span>
+  </div>
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -171,7 +151,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-  const firebaseConfig = {
+ const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -199,13 +179,13 @@
   // === Paramètres mosaïque ===
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const W = 300, H = 300;
-  let PIX = IS_MOBILE ? 8 : 10; // plus léger sur mobile
+  let PIX = IS_MOBILE ? 8 : 10;
   const canvas = document.getElementById('board');
   canvas.width  = W * PIX;
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
 
-  // === Palette (ordre + rouge + 3 peaux) ===
+  // === Palette ===
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
@@ -231,38 +211,47 @@
   const zLevelEl   = document.getElementById('zLevel');
   const showGridChk= document.getElementById('showGridChk');
   const panToggle  = document.getElementById('panToggle');
+  const trackerToggle = document.getElementById('trackerToggle');
+  const trackerTip = document.getElementById('trackerTip');
+  const trackerXY  = trackerTip.querySelector('.xy');
+  const trackerMeta= trackerTip.querySelector('.meta');
 
-  // ——— Helpers safe-area / visual viewport ———
-  function cssNumber(varName, el = document.documentElement){
-    const v = getComputedStyle(el).getPropertyValue(varName);
-    return parseFloat(v) || 0;
+  // === Trackeur (état mémorisé) ===
+  let trackerOn = (localStorage.getItem('pw-tracker') ?? '1') === '1';
+  function updateTrackerToggleUI(){
+    trackerToggle.classList.toggle('active', trackerOn);
+    trackerToggle.style.background = trackerOn ? '#000' : '';
+    trackerToggle.style.color = trackerOn ? '#fff' : '';
   }
-  function getSafeBottom(){ return cssNumber('--safe-bottom'); }
+  trackerToggle.addEventListener('click', ()=>{
+    trackerOn = !trackerOn;
+    localStorage.setItem('pw-tracker', trackerOn ? '1' : '0');
+    updateTrackerToggleUI();
+    if (!trackerOn) trackerTip.style.display = 'none';
+  });
+  updateTrackerToggleUI();
 
   // === Layout : viewport borné entre le header et la palette ===
   function layoutViewport(){
     const uiRect  = uiBar.getBoundingClientRect();
     const palRect = paletteBar.getBoundingClientRect();
-
-    // Utiliser la *visual viewport* si dispo (Chrome Android) pour éviter le “trou blanc”
     const vv = window.visualViewport;
     const screenH = vv ? vv.height : window.innerHeight;
-
-    // Espace entre le bas du viewport visuel et le haut de la palette
-    const bottomSpace = Math.round((screenH - palRect.top) + 8 + getSafeBottom());
+    const bottomSpace = Math.round((screenH - palRect.top) + 8 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0));
     viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
     viewport.style.bottom = bottomSpace + 'px';
   }
 
-  // === Grille mémoire + dessin ===
-  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // 1 = blanc
+  // === Grilles mémoire ===
+  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // couleur
+  const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // uid
+  const tsGrid     = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // timestamp
+
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
 
-  // Grille overlay
   function drawGridOverlay() {
-    const thin = 'rgba(0,0,0,0.15)';
-    const bold = 'rgba(0,0,0,0.35)';
+    const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
     ctx.save(); ctx.lineWidth = 1;
 
     ctx.beginPath(); ctx.strokeStyle = thin;
@@ -289,11 +278,9 @@
     ctx.restore();
   }
 
-  // Rendu initial
   fullPixels();
-  if (localStorage.getItem('pw-show-grid') === '1') {
-    showGridChk.checked = true; drawGridOverlay();
-  } else { showGridChk.checked = false; }
+  if (localStorage.getItem('pw-show-grid') === '1') { showGridChk.checked = true; drawGridOverlay(); }
+  else { showGridChk.checked = false; }
   showGridChk.addEventListener('change', ()=>{
     localStorage.setItem('pw-show-grid', showGridChk.checked ? '1' : '0');
     fullPixels(); if (showGridChk.checked) drawGridOverlay();
@@ -312,7 +299,7 @@
   }
   function updateCursor(){ canvas.style.cursor = makeColorCursor(colors[selected]); }
   canvas.addEventListener('mouseenter', updateCursor);
-  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; });
+  canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; trackerTip.style.display='none'; });
 
   // Palette 2 lignes
   function buildPalette(){
@@ -330,36 +317,26 @@
       paletteGrid.appendChild(sw);
     });
   }
-
   function layoutPaletteTwoRows(){
-    const total = colors.length;                // 30
-    const cols  = Math.ceil(total / 2);         // 15
-    const bar   = paletteBar;
-    const btns  = bar.querySelector('.dockZoom');
-    const barRect = bar.getBoundingClientRect();
-    const btnRect = btns.getBoundingClientRect();
+    const total = colors.length, cols = Math.ceil(total/2);
+    const bar = paletteBar, btns = bar.querySelector('.dockZoom');
+    const barRect = bar.getBoundingClientRect(), btnRect = btns.getBoundingClientRect();
     const pad = 2*parseFloat(getComputedStyle(bar).paddingLeft);
     const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
-
     const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
     const sw = Math.floor((available - gap*(cols-1)) / cols);
-
-    const minSw = 18;
-    const maxSw = IS_MOBILE ? 28 : 32;
+    const minSw = 18, maxSw = IS_MOBILE ? 28 : 32;
     const clamped = Math.max(minSw, Math.min(maxSw, sw));
-
     bar.style.setProperty('--cols', cols);
     bar.style.setProperty('--sw', clamped + 'px');
-
     const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
-    const barH = (clamped*2) + gap + barPad; // 2 lignes + 1 gap
+    const barH = (clamped*2) + gap + barPad;
     document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
   }
 
-  // ===== Scroll borné : taille réelle du contenu = (W*PIX*zoom) =====
+  // ===== Scroll borné (taille réelle = W*PIX*zoom) =====
   function updateSizer(){
-    const scaledW = W * PIX * zoom;
-    const scaledH = H * PIX * zoom;
+    const scaledW = W * PIX * zoom, scaledH = H * PIX * zoom;
     sizer.style.width  = Math.ceil(scaledW) + 'px';
     sizer.style.height = Math.ceil(scaledH) + 'px';
   }
@@ -372,74 +349,50 @@
     else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
   }
 
-  // ========= Zoom interne (centré & doux) =========
+  // ========= Zoom (centré & doux) =========
   let zoom = 1;
-  const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
-  const ZOOM_STEP = 1.12; // plus doux
-
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
   function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
-
-  // Pas de clampScroll ici pour éviter le "saut" avant recalcule
   function applyZoom(){
     stageWrap.style.transform = `scale(${zoom})`;
     zLevelEl.textContent = `${Math.round(zoom*100)}%`;
-    updateSizer(); // met à jour la zone scrollable réelle
+    updateSizer();
   }
-
-  // 👉 Zoom centré *réellement* sur le centre visible du viewport (math logique)
   function setZoomCentered(newZoom){
     const vp = viewport;
-    // centre logique (coordonnées non-scalées) actuellement au centre de l'écran
-    const logicalCX = (vp.scrollLeft + vp.clientWidth  / 2) / zoom;
-    const logicalCY = (vp.scrollTop  + vp.clientHeight / 2) / zoom;
-
+    const logicalCX = (vp.scrollLeft + vp.clientWidth/2) / zoom;
+    const logicalCY = (vp.scrollTop  + vp.clientHeight/2) / zoom;
     zoom = clampZoom(newZoom);
-    applyZoom(); // met à jour transform + sizer
-
-    // repositionne le scroll pour garder le même centre logique
-    vp.scrollLeft = logicalCX * zoom - vp.clientWidth  / 2;
-    vp.scrollTop  = logicalCY * zoom - vp.clientHeight / 2;
-
-    clampScroll(); // borne aux bords
+    applyZoom();
+    vp.scrollLeft = logicalCX * zoom - vp.clientWidth/2;
+    vp.scrollTop  = logicalCY * zoom - vp.clientHeight/2;
+    clampScroll();
   }
-
-  // Boutons + / −
   function zoomIn(){  setZoomCentered(clampZoom(zoom * ZOOM_STEP)); }
   function zoomOut(){ setZoomCentered(clampZoom(zoom / ZOOM_STEP)); }
-  document.getElementById('zIn').onclick    = zoomIn;
-  document.getElementById('zOut').onclick   = zoomOut;
+  document.getElementById('zIn').onclick = zoomIn;
+  document.getElementById('zOut').onclick = zoomOut;
   document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); clampScroll(); };
   document.getElementById('dockZIn').onclick  = zoomIn;
   document.getElementById('dockZOut').onclick = zoomOut;
 
-  // ====== Pinch-to-zoom (centré écran & adouci) ======
+  // ====== Pinch-to-zoom (centré & adouci) ======
   const activePointers = new Map();
-  let pinchStartDist = 0;
-  let pinchStartZoom = 1;
-  let pinchInProgress = false;
-
+  let pinchStartDist = 0, pinchStartZoom = 1, pinchInProgress = false;
   function pointersDistance(){
     const arr = [...activePointers.values()];
     if (arr.length < 2) return 0;
-    const dx = arr[0].x - arr[1].x;
-    const dy = arr[0].y - arr[1].y;
+    const dx = arr[0].x - arr[1].x, dy = arr[0].y - arr[1].y;
     return Math.hypot(dx, dy);
   }
-  function setTouchActionDuringPinch(on){
-    viewport.style.touchAction = on ? 'none' : 'pan-x pan-y';
-  }
-
+  function setTouchActionDuringPinch(on){ viewport.style.touchAction = on ? 'none' : 'pan-x pan-y'; }
   viewport.addEventListener('pointerdown', (e)=>{
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.size === 2){
-      pinchInProgress = true;
-      pinchStartDist = pointersDistance();
-      pinchStartZoom = zoom;
-      setTouchActionDuringPinch(true);
-      e.preventDefault();
+      pinchInProgress = true; pinchStartDist = pointersDistance(); pinchStartZoom = zoom;
+      setTouchActionDuringPinch(true); e.preventDefault();
     }
   }, { passive:false });
-
   viewport.addEventListener('pointermove', (e)=>{
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -447,39 +400,76 @@
       const dist = pointersDistance();
       if (dist > 0 && pinchStartDist > 0){
         const factor = dist / pinchStartDist;
-        const eased = Math.pow(factor, 0.85); // pinch moins “violent”
+        const eased = Math.pow(factor, 0.85);
         const newZoom = clampZoom(pinchStartZoom * eased);
-        setZoomCentered(newZoom);              // 👉 centré écran
+        setZoomCentered(newZoom);
         e.preventDefault();
       }
     }
   }, { passive:false });
-
   function endPointer(e){
     if (activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
     if (activePointers.size < 2 && pinchInProgress){
-      pinchInProgress = false;
-      setTouchActionDuringPinch(false);
-      clampScroll();
+      pinchInProgress = false; setTouchActionDuringPinch(false); clampScroll();
     }
   }
-  viewport.addEventListener('pointerup', endPointer,   { passive:true });
-  viewport.addEventListener('pointercancel', endPointer,{ passive:true });
+  viewport.addEventListener('pointerup', endPointer, { passive:true });
+  viewport.addEventListener('pointercancel', endPointer, { passive:true });
   viewport.addEventListener('pointerleave', endPointer, { passive:true });
 
-  // === Coordonnées (x,y) avec zoom
+  // === Coordonnées + Trackeur ===
   function screenToGrid(clientX, clientY){
     const rect = canvas.getBoundingClientRect();
     const localX = (clientX - rect.left) / zoom;
     const localY = (clientY - rect.top)  / zoom;
-    const x = Math.floor(localX / PIX);
-    const y = Math.floor(localY / PIX);
+    const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
     return { x, y };
   }
+  function timeAgoFR(ts){
+    if (!ts) return '';
+    const s = Math.max(1, Math.floor((Date.now() - ts)/1000));
+    if (s < 60) return `il y a ${s}s`;
+    const m = Math.floor(s/60); if (m < 60) return `il y a ${m} min`;
+    const h = Math.floor(m/60); if (h < 24) return `il y a ${h} h`;
+    const d = Math.floor(h/24); return `il y a ${d} j`;
+  }
+  function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
+
+  function updateTracker(e){
+    if (!trackerOn) return;
+    const {x,y} = screenToGrid(e.clientX, e.clientY);
+    if (x>=0 && x<W && y>=0 && y<H){
+      trackerXY.textContent = `(${x}, ${y})`;
+      const uid = authorGrid[y][x];
+      const when = tsGrid[y][x];
+      const who = uid ? `par ${uidShort(uid)}` : '—';
+      const ago = when ? `, ${timeAgoFR(when)}` : '';
+      trackerMeta.textContent = `${who}${ago}`;
+      trackerTip.style.display = 'block';
+      // positionner un peu au-dessus et à droite du doigt/souris
+      const offsetX = 14, offsetY = 18;
+      let tx = e.clientX + offsetX, ty = e.clientY - offsetY;
+      // éviter de sortir de l'écran
+      const rect = trackerTip.getBoundingClientRect();
+      if (tx + rect.width > window.innerWidth - 6) tx = window.innerWidth - rect.width - 6;
+      if (ty - rect.height < 6) ty = e.clientY + offsetY; // bas si pas de place en haut
+      trackerTip.style.left = tx + 'px';
+      trackerTip.style.top  = ty + 'px';
+    } else {
+      trackerTip.style.display = 'none';
+    }
+  }
+
   canvas.addEventListener('mousemove', (e)=>{
     const {x,y} = screenToGrid(e.clientX, e.clientY);
     coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
+    updateTracker(e);
   });
+  // support tactile : suivre le doigt
+  canvas.addEventListener('pointermove', (e)=>{
+    if (e.pointerType === 'touch') updateTracker(e);
+  });
+  canvas.addEventListener('pointerleave', ()=>{ trackerTip.style.display='none'; });
 
   // Storage helpers (PNG)
   function formatParisFilename(prefix="snapshot", ext="png"){
@@ -505,11 +495,8 @@
   const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
   const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
-
   function updateCountdown(ts){ countdownEl.textContent = 'Pause'; }
-  // nextResetRef.on('value', s => updateCountdown(s.val())); // en pause
   async function tryReset(){ return; }
-
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
     const res = await nextArchRef.transaction(cur => {
@@ -531,12 +518,15 @@
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
 
+  // UID courant
+  let CURRENT_UID = null;
+
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(user => {
     if (!user) return;
-    const uid = user.uid;
+    CURRENT_UID = user.uid;
 
-    const myPresenceRef = presenceRootRef.child(uid);
+    const myPresenceRef = presenceRootRef.child(user.uid);
     infoConnectedRef.on('value', snap => {
       if (snap.val() === true) {
         myPresenceRef.onDisconnect().remove().catch(()=>{});
@@ -554,7 +544,8 @@
     clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
 
     const pixelsRef = db.ref('pixels');
-    // Chargement progressif
+
+    // Chargement progressif initial
     pixelsRef.once('value').then(snap => {
       const val = snap.val() || {};
       let i = 0; const keys = Object.keys(val);
@@ -562,8 +553,13 @@
         const t0 = performance.now();
         while (i < keys.length && performance.now() - t0 < 12) {
           const key = keys[i++]; const [x,y] = key.split('_').map(Number);
-          const col = Number.isFinite(+val[key].color) ? +val[key].color : 1;
-          if (x>=0 && x<W && y>=0 && y<H) grid[y][x] = col;
+          const v = val[key] || {};
+          const col = Number.isFinite(+v.color) ? +v.color : 1;
+          if (x>=0 && x<W && y>=0 && y<H) {
+            grid[y][x] = col;
+            authorGrid[y][x] = v.author || null;
+            tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+          }
         }
         fullPixels(); if (showGridChk.checked) drawGridOverlay();
         if (i < keys.length) requestAnimationFrame(chunk);
@@ -579,35 +575,56 @@
       overlayQueued = true;
       requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
     }
+
     pixelsRef.on('child_added', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
+      const v = snap.val() || {};
+      const col = Number.isFinite(+v.color) ? +v.color : 1;
+      if (x>=0 && x<W && y>=0 && y<H) {
+        grid[y][x] = col;
+        authorGrid[y][x] = v.author || null;
+        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+        drawCell(x,y); queueOverlay();
+      }
     });
     pixelsRef.on('child_changed', snap => {
       const [x,y] = snap.key.split('_').map(Number);
-      const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
+      const v = snap.val() || {};
+      const col = Number.isFinite(+v.color) ? +v.color : 1;
+      if (x>=0 && x<W && y>=0 && y<H) {
+        grid[y][x] = col;
+        authorGrid[y][x] = v.author || null;
+        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+        drawCell(x,y); queueOverlay();
+      }
     });
 
-    // Pose de pixel (avec zoom) + incrément compteur
-    let panActive = false; // géré par le bouton Main
+    // Pose de pixel (avec auteur + ts + historique)
+    let panActive = false;
     canvas.addEventListener('click', async (e)=>{
-      if (panActive) return; // en mode Main, pas de pose
+      if (panActive) return;
       const rect = canvas.getBoundingClientRect();
       const localX = (e.clientX - rect.left) / zoom;
       const localY = (e.clientY - rect.top)  / zoom;
-      const x = Math.floor(localX / PIX);
-      const y = Math.floor(localY / PIX);
+      const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
       if (x<0||x>=W||y<0||y>=H) return;
       if (selected < 0 || selected >= colors.length) return;
+      const key = `${x}_${y}`;
       try {
-        await db.ref(`pixels/${x}_${y}`).set({ color: selected });
+        const payload = {
+          color: selected,
+          author: CURRENT_UID || 'anon',
+          ts: firebase.database.ServerValue.TIMESTAMP
+        };
+        await db.ref(`pixels/${key}`).set(payload);
+        await db.ref(`history/${key}`).push(payload);
         await clicksRef.transaction(cur => (cur||0) + 1);
-      } catch (err) { console.error('write pixel / click count error', err); }
+      } catch (err) {
+        console.error('write pixel / click count error', err);
+      }
     });
 
-    // Raccourci Shift + molette (desktop) = changer de couleur
+    // Raccourci Shift + molette (desktop)
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
@@ -621,37 +638,28 @@
     // Archives (actives)
     setInterval(tryArchive, 10*1000);
 
-    // ========== Mode MAIN (pan/drag du viewport) ==========
-    let isDragging = false;
-    let startX = 0, startY = 0;
-    let startScrollLeft = 0, startScrollTop = 0;
-
+    // Mode MAIN (pan)
+    let isDragging = false, startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
     function setPanActive(on){
       panActive = on;
       panToggle.classList.toggle('active', panActive);
       viewport.style.cursor = panActive ? 'grab' : 'default';
     }
-
     panToggle.addEventListener('click', ()=> setPanActive(!panActive) );
-
     viewport.addEventListener('pointerdown', (e)=>{
       if (!panActive) return;
       isDragging = true;
       viewport.setPointerCapture(e.pointerId);
       startX = e.clientX; startY = e.clientY;
-      startScrollLeft = viewport.scrollLeft;
-      startScrollTop  = viewport.scrollTop;
-      viewport.style.cursor = 'grabbing';
-      e.preventDefault();
+      startScrollLeft = viewport.scrollLeft; startScrollTop  = viewport.scrollTop;
+      viewport.style.cursor = 'grabbing'; e.preventDefault();
     });
     viewport.addEventListener('pointermove', (e)=>{
       if (!panActive || !isDragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
       viewport.scrollLeft = startScrollLeft - dx;
       viewport.scrollTop  = startScrollTop  - dy;
-      clampScroll();
-      e.preventDefault();
+      clampScroll(); e.preventDefault();
     });
     function endPan(e){
       if (!isDragging) return;
@@ -665,27 +673,21 @@
     viewport.addEventListener('pointerleave', endPan);
   });
 
-  // Layout + sizer init
+  // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
-
-  // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait, zoom UI, etc.)
   if (window.visualViewport){
     visualViewport.addEventListener('resize', layoutViewport);
     visualViewport.addEventListener('scroll',  layoutViewport);
   }
-
   window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
   window.addEventListener('resize', ()=>{ relayoutAll(); });
   window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
 
-  // Recalage si la palette ou la barre du haut change de taille
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
 
-  // === Affichage compteur reset en PAUSE ===
   document.getElementById('countdown').textContent = 'Pause';
   </script>
 </body>
 </html>
-
