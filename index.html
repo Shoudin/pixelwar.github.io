@@ -580,7 +580,7 @@
       requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
     }
     pixelsRef.on('child_added', snap => {
-      const [x,y] = snap.key split('_').map(Number);
+      const [x,y] = snap.key.split('_').map(Number);
       const col = Number.isFinite(+snap.val().color) ? +snap.val().color : 1;
       if (x>=0 && x<W && y>=0 && y<H) { grid[y][x] = col; drawCell(x,y); queueOverlay(); }
     });
@@ -688,3 +688,4 @@
   </script>
 </body>
 </html>
+
