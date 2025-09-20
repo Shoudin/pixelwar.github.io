@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <!-- UI mobile stable : on zoome le canvas (pas la page) -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (palette 2 lignes responsive)</title>
+  <title>Pixel War — 300×300 (palette 2 lignes, pause reset)</title>
   <style>
     :root{
-      --bar-h: 92px;          /* hauteur approximative (ajustée par JS si besoin) */
+      --bar-h: 92px;          /* hauteur approximative (ajustée par JS) */
       --bar-pad: 10px;
       --gap: 8px;             /* espacement entre cases  */
       --sw: 28px;             /* taille d’une case (fixée par JS) */
@@ -26,7 +26,7 @@
     /* Laisse de la place à la barre palette */
     .bottomSpacer { height: calc(var(--bar-h) + 20px); }
 
-    /* Palette bas centrée : rail en grille 2 lignes + boutons +/− */
+    /* Palette bas centrée : grille 2 lignes + boutons +/- empilés */
     #paletteBar{
       position: fixed;
       left: 50%;
@@ -43,7 +43,7 @@
       z-index: 10;
     }
 
-    /* Grille 2 lignes, nombre de colonnes et taille des cases pilotés par JS */
+    /* Grille 2 lignes, colonnes et taille pilotées par JS */
     #paletteGrid{
       display: grid;
       grid-auto-flow: row dense;
@@ -63,11 +63,14 @@
     }
     .activeSw{ outline: 2px solid #000; outline-offset: 2px; }
 
-    .dockZoom{ display:flex; gap:8px; align-items:center; justify-content:center; }
+    .dockZoom{
+      display:flex; flex-direction: column; gap:6px;
+      align-items:center; justify-content:center;
+    }
     .dockZoom button{
-      width: 40px; height: 34px;
+      width: 36px; height: 28px;   /* réduit + empilé */
       border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
-      font-size: 18px; line-height: 1;
+      font-size: 16px; line-height: 1;
     }
 
     .zoomControls{ display:flex; gap:8px; align-items:center; }
@@ -78,14 +81,14 @@
     @media (max-width: 480px){
       :root{ --gap: 6px; }
       body{ margin: 12px; }
-      .dockZoom button{ width: 36px; height: 32px; }
+      .dockZoom button{ width: 32px; height: 26px; font-size: 15px; }
     }
   </style>
 </head>
 <body>
   <h1>Pixel War — 300×300</h1>
   <div class="ui">
-    <div>Prochain reset : <span id="countdown" class="dim">chargement…</span></div>
+    <div>Prochain reset : <span id="countdown" class="dim">Pause</span></div>
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
     <div>Coordonnées : <span id="coords" class="dim">—</span></div>
@@ -106,12 +109,12 @@
 
   <div class="bottomSpacer" aria-hidden="true"></div>
 
-  <!-- Palette bas : grille 2 lignes + boutons -->
+  <!-- Palette bas : grille 2 lignes + boutons verticalisés -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
     <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
-      <button id="dockZOut" title="Zoom -">−</button>
       <button id="dockZIn"  title="Zoom +">+</button>
+      <button id="dockZOut" title="Zoom -">−</button>
     </div>
   </aside>
 
@@ -123,7 +126,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-  const firebaseConfig = {
+const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -179,6 +182,9 @@
   const coordsEl    = document.getElementById('coords');
   const zLevelEl    = document.getElementById('zLevel');
   const showGridChk = document.getElementById('showGridChk');
+
+  // Force l'affichage "Pause" du compte à rebours
+  countdownEl.textContent = 'Pause';
 
   // === Grille mémoire + dessin ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // 1 = blanc
@@ -258,12 +264,9 @@
   }
 
   function layoutPaletteTwoRows(){
-    // Nombre de colonnes = moitiée arrondie haut
-    const total = colors.length;                // 27
-    const cols  = Math.ceil(total / 2);         // 14
-    // Largeur disponible = largeur de la 1ère colonne de #paletteBar
+    const total = colors.length;                // 30 couleurs
+    const cols  = Math.ceil(total / 2);         // 15 colonnes
     const bar   = document.getElementById('paletteBar');
-    // calc largeur colonne palette (la grille) ≈ largeur totale - largeur boutons - gaps
     const btns  = bar.querySelector('.dockZoom');
     const barRect = bar.getBoundingClientRect();
     const btnRect = btns.getBoundingClientRect();
@@ -271,19 +274,15 @@
     const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
 
     const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
-    // Taille swatch = (available - gaps) / cols
     const sw = Math.floor((available - gap*(cols-1)) / cols);
 
-    // Limites raisonnables selon device
     const minSw = 18;                      // mini lisible
     const maxSw = IS_MOBILE ? 28 : 32;     // un peu plus grand sur desktop
     const clamped = Math.max(minSw, Math.min(maxSw, sw));
 
-    // Met à jour les variables CSS
     bar.style.setProperty('--cols', cols);
     bar.style.setProperty('--sw', clamped + 'px');
 
-    // Ajuste la hauteur globale de la barre (≈ 2 lignes + gaps + paddings)
     const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
     const barH = (clamped*2) + gap + barPad; // 2 lignes + 1 gap vertical
     document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
@@ -292,7 +291,6 @@
   // Construire & poser la palette
   buildPalette();
   updateCursor();
-  // Layout initial + sur resize/orientation
   function relayoutAll(){ layoutPaletteTwoRows(); }
   window.addEventListener('load', relayoutAll);
   window.addEventListener('resize', relayoutAll);
@@ -346,36 +344,24 @@
     return { path, url };
   }
 
-  // Reset & archive
+  // Reset & archive ——— PAUSE DU RESET ———
   const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
   const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
+
   function updateCountdown(ts){
-    if (!ts) { countdownEl.textContent = '—'; return; }
-    const left = ts - Date.now();
-    if (left <= 0) { countdownEl.textContent = 'reset imminent…'; return; }
-    const h = Math.floor(left/3_600_000), m = Math.floor((left%3_600_000)/60_000), s = Math.floor((left%60_000)/1000);
-    countdownEl.textContent = `${h}h ${m}m ${s}s`;
+    // En pause : on force l'étiquette 'Pause'
+    countdownEl.textContent = 'Pause';
   }
-  nextResetRef.on('value', s => updateCountdown(s.val()));
+
+  // ❌ Désactivation du flux de compte à rebours :
+  // nextResetRef.on('value', s => updateCountdown(s.val()));
 
   async function tryReset(){
-    const now=Date.now(); let commit=false, newNext=null;
-    const res = await nextResetRef.transaction(cur => {
-      if (cur===null){ newNext=now+PERIOD_RESET; commit=true; return newNext; }
-      if (now>=cur){ newNext=now+PERIOD_RESET; commit=true; return newNext; }
-      return;
-    });
-    if (res.committed && commit) {
-      try { fullPixels(); if (showGridChk.checked) drawGridOverlay();
-            await uploadSnapshot('resets', formatParisFilename('reset','png')); }
-      catch(e){ console.warn('Snapshot reset échoué:', e); }
-      await db.ref('pixels').remove();
-      await lastResetRef.set(now);
-      grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
-      fullPixels(); if (showGridChk.checked) drawGridOverlay();
-    }
+    // En pause : ne fait rien
+    return;
   }
+
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
     const res = await nextArchRef.transaction(cur => {
@@ -471,7 +457,7 @@
       } catch (err) { console.error('write pixel / click count error', err); }
     });
 
-    // Shift + molette (desktop) = changer de couleur
+    // Raccourci Shift + molette (desktop)
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
@@ -482,14 +468,13 @@
       }
     }, { passive: false });
 
-    // Tickers
-    tryReset();
-    setInterval(tryReset,   60*1000);
+    // ——— PAUSE du reset : on ne planifie pas tryReset ni le compte à rebours ———
+    // tryReset();
+    // setInterval(tryReset,   60*1000);
+    // setInterval(async ()=>{ const snap = await nextResetRef.get(); updateCountdown(snap.val()); }, 1000);
+
+    // Archives (toujours actives)
     setInterval(tryArchive, 10*1000);
-    setInterval(async ()=>{
-      const snap = await nextResetRef.get();
-      updateCountdown(snap.val());
-    }, 1000);
   });
   </script>
 </body>
