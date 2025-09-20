@@ -4,27 +4,41 @@
   <meta charset="utf-8" />
   <!-- UI mobile stable : on zoome le canvas (pas la page) -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Pixel War — 300×300 (palette 2 lignes, pause reset)</title>
+  <title>Pixel War — 300×300 (palette 2 lignes, pause reset, scroll borné)</title>
   <style>
     :root{
-      --bar-h: 92px;          /* hauteur approximative (ajustée par JS) */
+      --bar-h: 92px;   /* hauteur approx. de la palette (ajustée par JS) */
       --bar-pad: 10px;
-      --gap: 8px;             /* espacement entre cases  */
-      --sw: 28px;             /* taille d’une case (fixée par JS) */
-      --cols: 14;             /* nb de colonnes (fixé par JS) */
+      --gap: 8px;      /* espace entre cases */
+      --sw: 28px;      /* taille case (fixée par JS) */
+      --cols: 14;      /* colonnes (fixé par JS) */
     }
     * { box-sizing: border-box; }
+
+    /* Empêche le scroll de PAGE ; on scrolle uniquement dans #viewport */
+    html, body { height: 100svh; overflow: hidden; }
     body { font-family: system-ui, sans-serif; margin: 16px; }
+
     h1 { margin: 0 0 8px 0; font-size: 18px; }
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
+    /* Viewport scrollable qui contient la scène */
+    #viewport{
+      position: fixed;
+      left: 0; right: 0;
+      /* top et bottom sont définis dynamiquement par JS pour éviter tout blanc */
+      overflow: auto;
+      overscroll-behavior: contain;  /* évite le “rebond” et la propagation */
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x pan-y;     /* autorise le défilement naturel */
+      background: #fff;              /* pas de noir/blanc “infini” */
+      z-index: 1;                    /* sous la palette */
+    }
+
     /* Scène */
     #stageWrap { display:inline-block; transform-origin: top left; }
     #board { image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
-
-    /* Laisse de la place à la barre palette */
-    .bottomSpacer { height: calc(var(--bar-h) + 20px); }
 
     /* Palette bas centrée : grille 2 lignes + boutons +/- empilés */
     #paletteBar{
@@ -43,7 +57,7 @@
       z-index: 10;
     }
 
-    /* Grille 2 lignes, colonnes et taille pilotées par JS */
+    /* Grille 2 lignes (colonnes & taille pilotées par JS) */
     #paletteGrid{
       display: grid;
       grid-auto-flow: row dense;
@@ -53,7 +67,6 @@
       column-gap: var(--gap);
       place-items: center;
     }
-
     .sw{
       width: var(--sw);
       height: var(--sw);
@@ -87,7 +100,7 @@
 </head>
 <body>
   <h1>Pixel War — 300×300</h1>
-  <div class="ui">
+  <div class="ui" id="uiBar">
     <div>Prochain reset : <span id="countdown" class="dim">Pause</span></div>
     <div>Connectés : <span id="onlineCount" class="dim">0</span></div>
     <div>Pixels posés : <span id="clickCount" class="dim">0</span></div>
@@ -103,11 +116,12 @@
     </label>
   </div>
 
-  <div id="stageWrap">
-    <canvas id="board"></canvas>
+  <!-- Viewport scrollable borné -->
+  <div id="viewport">
+    <div id="stageWrap">
+      <canvas id="board"></canvas>
+    </div>
   </div>
-
-  <div class="bottomSpacer" aria-hidden="true"></div>
 
   <!-- Palette bas : grille 2 lignes + boutons verticalisés -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
@@ -126,7 +140,7 @@
 
   <script>
   // === Config Firebase (remplace PASTE_ME) ===
-const firebaseConfig = {
+  const firebaseConfig = {
 
   apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
 
@@ -175,16 +189,27 @@ const firebaseConfig = {
   let selected = 0;
 
   // === Références DOM ===
-  const paletteGrid = document.getElementById('paletteGrid');
-  const countdownEl = document.getElementById('countdown');
-  const onlineEl    = document.getElementById('onlineCount');
-  const clickEl     = document.getElementById('clickCount');
-  const coordsEl    = document.getElementById('coords');
-  const zLevelEl    = document.getElementById('zLevel');
-  const showGridChk = document.getElementById('showGridChk');
+  const viewport   = document.getElementById('viewport');
+  const paletteGrid= document.getElementById('paletteGrid');
+  const paletteBar = document.getElementById('paletteBar');
+  const uiBar      = document.getElementById('uiBar');
+  const countdownEl= document.getElementById('countdown');
+  const onlineEl   = document.getElementById('onlineCount');
+  const clickEl    = document.getElementById('clickCount');
+  const coordsEl   = document.getElementById('coords');
+  const zLevelEl   = document.getElementById('zLevel');
+  const showGridChk= document.getElementById('showGridChk');
 
-  // Force l'affichage "Pause" du compte à rebours
-  countdownEl.textContent = 'Pause';
+  // === Layout : viewport borné entre la barre du haut et la palette ===
+  function layoutViewport(){
+    const uiRect = uiBar.getBoundingClientRect();
+    const palRect = paletteBar.getBoundingClientRect();
+    // top = bas de l'UI + 8px
+    viewport.style.top = Math.round(uiRect.bottom + 8) + 'px';
+    // bottom = (hauteur palette + 12px marge)
+    const bottomSpace = Math.round((window.innerHeight - palRect.top) + 8);
+    viewport.style.bottom = bottomSpace + 'px';
+  }
 
   // === Grille mémoire + dessin ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // 1 = blanc
@@ -266,7 +291,7 @@ const firebaseConfig = {
   function layoutPaletteTwoRows(){
     const total = colors.length;                // 30 couleurs
     const cols  = Math.ceil(total / 2);         // 15 colonnes
-    const bar   = document.getElementById('paletteBar');
+    const bar   = paletteBar;
     const btns  = bar.querySelector('.dockZoom');
     const barRect = bar.getBoundingClientRect();
     const btnRect = btns.getBoundingClientRect();
@@ -291,10 +316,13 @@ const firebaseConfig = {
   // Construire & poser la palette
   buildPalette();
   updateCursor();
-  function relayoutAll(){ layoutPaletteTwoRows(); }
+
+  // Layout global (viewport + palette sizing)
+  function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); }
   window.addEventListener('load', relayoutAll);
   window.addEventListener('resize', relayoutAll);
   window.addEventListener('orientationchange', relayoutAll);
+  // petits recalages tardifs
   setTimeout(relayoutAll, 200);
   setTimeout(relayoutAll, 800);
 
@@ -349,18 +377,10 @@ const firebaseConfig = {
   const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
 
-  function updateCountdown(ts){
-    // En pause : on force l'étiquette 'Pause'
-    countdownEl.textContent = 'Pause';
-  }
-
-  // ❌ Désactivation du flux de compte à rebours :
+  function updateCountdown(ts){ countdownEl.textContent = 'Pause'; }
+  // Désactivé en pause :
   // nextResetRef.on('value', s => updateCountdown(s.val()));
-
-  async function tryReset(){
-    // En pause : ne fait rien
-    return;
-  }
+  async function tryReset(){ return; }
 
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
@@ -468,7 +488,7 @@ const firebaseConfig = {
       }
     }, { passive: false });
 
-    // ——— PAUSE du reset : on ne planifie pas tryReset ni le compte à rebours ———
+    // ——— PAUSE du reset : pas de timers reset/compte à rebours ———
     // tryReset();
     // setInterval(tryReset,   60*1000);
     // setInterval(async ()=>{ const snap = await nextResetRef.get(); updateCountdown(snap.val()); }, 1000);
@@ -476,6 +496,10 @@ const firebaseConfig = {
     // Archives (toujours actives)
     setInterval(tryArchive, 10*1000);
   });
+
+  // Relayout si la palette change de taille (par ex. rotation)
+  new ResizeObserver(()=>layoutViewport()).observe(paletteBar);
+  new ResizeObserver(()=>layoutViewport()).observe(uiBar);
   </script>
 </body>
 </html>
