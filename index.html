@@ -169,13 +169,15 @@ const firebaseConfig = {
   const ctx = canvas.getContext('2d');
 
   // === Palette (ordre demandé + rouge franc) ===
-  const colors = [
-    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
-    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-    '#E0E0E0','#9E9E9E','#616161','#FF0000' // Rouge pur ajouté
-  ];
+ const colors = [
+  '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
+  '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
+  '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
+  '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
+  '#E0E0E0','#9E9E9E','#616161','#FF0000','#FFDBAC',
+  '#F1C27D', '#E0AC69'
+];
+
   let selected = 0;
 
   // === Références DOM ===
@@ -493,3 +495,4 @@ const firebaseConfig = {
   </script>
 </body>
 </html>
+
