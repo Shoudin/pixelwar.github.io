@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Pixel War — Admin</title>
+  <style>
+    :root{ --pad:16px; --gap:12px; --card:#fff; --ink:#111; --muted:#666; --bd:#ddd; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; background:#f6f7f9; color:var(--ink); font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header{ padding: var(--pad); border-bottom:1px solid var(--bd); background:#fff; position:sticky; top:0; z-index:10; }
+    h1{ margin:0; font-size:20px; }
+    .wrap{ padding: var(--pad); display:grid; gap: var(--pad); grid-template-columns: 1.1fr 1fr; align-items:start; }
+    .card{ background:var(--card); border:1px solid var(--bd); border-radius:12px; padding: var(--pad); }
+    .row{ display:flex; gap: var(--gap); align-items:center; flex-wrap:wrap; }
+    .grid{ display:grid; gap: var(--gap); }
+    .grid.cols2{ grid-template-columns: 1fr 1fr; }
+    label.inline{ display:flex; gap:8px; align-items:center; }
+    .muted{ color: var(--muted); }
+    button{ padding:8px 12px; border-radius:10px; border:1px solid #bbb; background:#fff; cursor:pointer; font-weight:600; }
+    button[disabled]{ opacity:.5; cursor:not-allowed; }
+    input[type="password"], input[type="text"]{ padding:8px 10px; border-radius:8px; border:1px solid #ccc; font-size:14px; }
+    .kpi{ display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap); }
+    .kpi .item{ padding:14px; border:1px solid var(--bd); border-radius:12px; background:#fff; }
+    .kpi .n{ font-size:22px; font-weight:800; }
+    canvas{ image-rendering: pixelated; border:1px solid #333; background:#fff; }
+    .danger{ color:#b00020; border-color:#b00020; }
+    .ok{ color:#0a7a20; }
+    .note{ font-size:12px; }
+    .footer{ padding: var(--pad); text-align:center; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <h1>Admin — Pixel War</h1>
+      <span class="muted">• contrôle & maintenance</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Colonne A -->
+    <section class="grid">
+      <div class="card">
+        <h2 style="margin-top:0">Accès admin</h2>
+        <p class="muted">Saisis le <strong>code admin</strong> défini dans <code>config/adminCode</code> (Realtime DB).</p>
+        <div class="row">
+          <input id="adminCodeInput" type="password" placeholder="••••••••" />
+          <button id="adminCodeCheck">Déverrouiller</button>
+          <span id="adminGateStatus" class="muted">verrouillé</span>
+        </div>
+        <p class="note">Tant que non déverrouillé, les actions critiques restent désactivées.</p>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0">Stats</h2>
+        <div class="kpi">
+          <div class="item">
+            <div class="muted">Connectés</div>
+            <div id="kOnline" class="n">—</div>
+          </div>
+          <div class="item">
+            <div class="muted">Pixels posés</div>
+            <div id="kPixels" class="n">—</div>
+          </div>
+          <div class="item">
+            <div class="muted">Clics total</div>
+            <div id="kClicks" class="n">—</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="muted">Dernier reset :</div>
+          <div id="lastReset">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0">Aperçu mosaïque</h2>
+        <div class="row">
+          <canvas id="preview" width="300" height="300"></canvas>
+          <div class="grid" style="align-content:start">
+            <button id="btnRefreshPreview">Rafraîchir</button>
+            <button id="btnExportPNG">Exporter PNG</button>
+            <button id="btnArchivePNG" disabled>Archiver vers Storage</button>
+            <span class="note">Palette et dimensions : 300×300, couleurs indexées.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Colonne B -->
+    <section class="grid">
+      <div class="card">
+        <h2 style="margin-top:0">Actions</h2>
+        <div class="grid">
+          <div>
+            <div class="muted">Purge complète (efface <code>pixels/</code> & écrit <code>config/lastResetAt</code>)</div>
+            <div class="row" style="margin-top:8px">
+              <input id="confirmClear" type="text" placeholder='Tape "CLEAR" pour confirmer' />
+              <button id="btnClear" class="danger" disabled>Vider la mosaïque</button>
+            </div>
+            <p class="note">⚠️ Irréversible. Sauvegarde/Archive avant !</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0">Infos système</h2>
+        <ul class="note">
+          <li>SDK: Firebase compat 10.12.2</li>
+          <li>DB: <code>pixels/{x}_{y} → { color:number, author?:uid, ts?:number }</code></li>
+          <li>Archive Storage dossier: <code>archive/</code></li>
+        </ul>
+        <div id="sysStatus" class="muted">Prêt.</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="footer">© Le Grand Gribidouillage — Admin</div>
+
+  <!-- Firebase compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+  <script>
+  // === Config (identique à index) ===
+  const firebaseConfig = {
+    apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
+    authDomain: "shoudinpixelwar.firebaseapp.com",
+    databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "shoudinpixelwar",
+    storageBucket: "shoudinpixelwar.firebasestorage.app",
+    messagingSenderId: "896929635521",
+    appId: "1:896929635521:web:357f7b8a29cb5045684840",
+    measurementId: "G-FR7NC03RCY"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.database();
+  const storage = firebase.storage();
+
+  // === Constantes mosaïque (comme index) ===
+  const W=300, H=300;
+  const colors = [
+    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
+    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
+    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
+    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
+    '#E0E0E0','#9E9E9E','#616161',
+    '#FF0000','#FFDBAC','#F1C27D','#E0AC69'
+  ];
+
+  // === UI refs ===
+  const kOnline = document.getElementById('kOnline');
+  const kPixels = document.getElementById('kPixels');
+  const kClicks = document.getElementById('kClicks');
+  const lastResetEl = document.getElementById('lastReset');
+  const sysStatus = document.getElementById('sysStatus');
+
+  const adminCodeInput = document.getElementById('adminCodeInput');
+  const adminCodeCheck = document.getElementById('adminCodeCheck');
+  const adminGateStatus = document.getElementById('adminGateStatus');
+
+  const preview = document.getElementById('preview');
+  const pctx = preview.getContext('2d');
+  const btnRefreshPreview = document.getElementById('btnRefreshPreview');
+  const btnExportPNG = document.getElementById('btnExportPNG');
+  const btnArchivePNG = document.getElementById('btnArchivePNG');
+
+  const confirmClear = document.getElementById('confirmClear');
+  const btnClear = document.getElementById('btnClear');
+
+  let ADMIN_OK = false;
+  let CURRENT_UID = null;
+
+  function tsToFR(ts){
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium', timeStyle:'short' }).format(d);
+  }
+
+  function guard(){
+    btnArchivePNG.disabled = !ADMIN_OK;
+    btnClear.disabled = !ADMIN_OK || confirmClear.value !== 'CLEAR';
+  }
+  confirmClear.addEventListener('input', guard);
+
+  // === Auth anonyme ===
+  auth.signInAnonymously().catch(console.error);
+  auth.onAuthStateChanged(u => { CURRENT_UID = u ? u.uid : null; });
+
+  // === Gate admin par code (stocké en DB)
+  adminCodeCheck.addEventListener('click', async ()=>{
+    try{
+      const snap = await db.ref('config/adminCode').once('value');
+      const required = String(snap.val() || '');
+      const typed = String(adminCodeInput.value || '');
+      ADMIN_OK = required && typed && (typed === required);
+      adminGateStatus.textContent = ADMIN_OK ? 'déverrouillé' : 'verrouillé';
+      adminGateStatus.className = ADMIN_OK ? 'ok' : 'muted';
+      guard();
+    }catch(e){
+      sysStatus.textContent = 'Erreur lecture adminCode';
+    }
+  });
+
+  // === Stats live ===
+  // Connectés
+  db.ref('presence').on('value', s => {
+    const v = s.val() || {};
+    kOnline.textContent = String(Object.keys(v).length);
+  });
+  // Clics total
+  db.ref('stats/clicksTotal').on('value', s => {
+    kClicks.textContent = String(s.val() || 0);
+  });
+  // Dernier reset
+  db.ref('config/lastResetAt').on('value', s => {
+    lastResetEl.textContent = tsToFR(s.val());
+  });
+
+  // === Chargement preview + comptage pixels ===
+  async function loadBoardToPreview(){
+    pctx.clearRect(0,0,preview.width, preview.height);
+    // on dessine en 1:1 (300×300) avec couleur par index
+    const snap = await db.ref('pixels').once('value');
+    const data = snap.val() || {};
+    let count=0;
+    // petit batch pour réactivité
+    const keys = Object.keys(data); let i=0;
+    function chunk(){
+      const t0 = performance.now();
+      while (i<keys.length && performance.now()-t0 < 12){
+        const k = keys[i++]; const v = data[k] || {};
+        const [x,y] = k.split('_').map(Number);
+        const idx = Number.isFinite(+v.color) ? +v.color : 1;
+        const col = colors[idx] || '#FFFFFF';
+        if (x>=0 && x<W && y>=0 && y<H){
+          pctx.fillStyle = col;
+          pctx.fillRect(x, y, 1, 1);
+          count++;
+        }
+      }
+      if (i<keys.length) requestAnimationFrame(chunk);
+      else kPixels.textContent = String(count);
+    }
+    requestAnimationFrame(chunk);
+  }
+
+  btnRefreshPreview.addEventListener('click', loadBoardToPreview);
+
+  // === Export PNG (download local)
+  btnExportPNG.addEventListener('click', async ()=>{
+    await loadBoardToPreview();
+    // Convertir le canvas 300×300 (chaque pixel = 1) en blob PNG
+    preview.toBlob(b=>{
+      const a = document.createElement('a');
+      const url = URL.createObjectURL(b);
+      a.href = url; a.download = `export_${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }, 'image/png');
+  });
+
+  // === Archive PNG (upload vers Storage) — nécessite ADMIN_OK + règles Storage
+  btnArchivePNG.addEventListener('click', async ()=>{
+    if (!ADMIN_OK) return;
+    await loadBoardToPreview();
+    await new Promise(r => requestAnimationFrame(r));
+    preview.toBlob(async (blob)=>{
+      if (!blob) return;
+      const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      const parts = fmt.formatToParts(new Date());
+      const get=t=>parts.find(p=>p.type===t)?.value||'';
+      const name = `archive/admin_${get('year')}-${get('month')}-${get('day')}_${get('hour')}-${get('minute')}-${get('second')}.png`;
+      try{
+        const ref = storage.ref().child(name);
+        await ref.put(blob, { contentType:'image/png' });
+        sysStatus.textContent = `Archivé: ${name}`;
+      }catch(e){
+        sysStatus.textContent = 'Échec archive (règles Storage ?)';
+      }
+    }, 'image/png');
+  });
+
+  // === Purge (CLEAR) — efface pixels/ + set lastResetAt
+  btnClear.addEventListener('click', async ()=>{
+    if (!ADMIN_OK || confirmClear.value !== 'CLEAR') return;
+    if (!confirm('Confirmer la purge complète du board ?')) return;
+    try{
+      await db.ref('pixels').remove();
+      await db.ref('config/lastResetAt').set(Date.now());
+      sysStatus.textContent = 'Purge effectuée.';
+      await loadBoardToPreview();
+    }catch(e){
+      sysStatus.textContent = 'Erreur purge.';
+    }
+  });
+
+  // Auto-chargement initial
+  loadBoardToPreview();
+  </script>
+</body>
+</html>
