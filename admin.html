@@ -299,10 +299,9 @@
 
   const leaderBody = document.getElementById('leaderBody');
 
-  // Chart refs
+  // Chart refs (déclarés UNE seule fois)
   const chart = document.getElementById('chart');
   const chartCtx = chart.getContext('2d');
-  const chartWrap = document.getElementById('chartWrap');
   const chartNoData = document.getElementById('chartNoData');
   const dayPrev = document.getElementById('dayPrev');
   const dayNext = document.getElementById('dayNext');
@@ -384,7 +383,6 @@
   }
   btnRefreshPreview.addEventListener('click', ()=>{ loadBoardToPreview(); });
 
-  // Export en 1200×1200, pixel-perfect (pas de relecture DB)
   function exportScaledPNG(){
     const out = document.createElement('canvas');
     out.width = W * EXPORT_SCALE;
@@ -407,15 +405,15 @@
     }, 'image/png');
   }
   btnExportPNG.addEventListener('click', async ()=>{
-    await loadBoardToPreview();            // s’assure que preview est à jour
+    await loadBoardToPreview();
     await new Promise(r=>requestAnimationFrame(r));
     exportScaledPNG();
   });
 
   btnArchivePNG.addEventListener('click', async ()=>{
     if(!ADMIN_OK) return;
-    await loadBoardToPreview(); await new Promise(r=>requestAnimationFrame(r));
-    // archive aussi en x4
+    await loadBoardToPreview();
+    await new Promise(r=>requestAnimationFrame(r));
     const out = document.createElement('canvas');
     out.width = W * EXPORT_SCALE; out.height = H * EXPORT_SCALE;
     const octx = out.getContext('2d'); octx.imageSmoothingEnabled=false;
@@ -438,7 +436,6 @@
   });
 
   // ===== Statistiques =====
-  // Pseudos
   const namesByUid = {};
   function ensureName(uid){
     if(!uid || namesByUid[uid]) return Promise.resolve();
@@ -483,7 +480,7 @@
   }
   document.getElementById('btnReloadHistory').addEventListener('click', ()=>{ const lim=+histLimitSel.value||200; loadHistory(lim); });
 
-  // Hit parade (temps réel) — exclut UIDs sans pseudo, affiche %
+  // Hit parade
   const pixelOwners = {};       // "x_y" -> uid|null
   const ownerCount = new Map(); // uid -> count
   function addCount(uid){ if(!uid) return; ownerCount.set(uid,(ownerCount.get(uid)||0)+1); }
@@ -527,14 +524,7 @@
     });
   }
 
-  // ===== Graph fréquentation cumulée =====
-  const chart = document.getElementById('chart');
-  const chartCtx = chart.getContext('2d');
-  const chartNoData = document.getElementById('chartNoData');
-  const dayPrev = document.getElementById('dayPrev');
-  const dayNext = document.getElementById('dayNext');
-  const dayLabel = document.getElementById('dayLabel');
-
+  // ==== Graph fréquentation cumulée ====
   function dateToKey(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function frDayLabel(d){ return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium' }).format(d); }
 
@@ -560,17 +550,14 @@
     const Wc = chart.width, Hc = chart.height;
     ctx.clearRect(0,0,Wc,Hc);
 
-    // fond
     ctx.fillStyle = '#fff';
     ctx.fillRect(0,0,Wc,Hc);
     ctx.strokeStyle = '#ddd';
     ctx.lineWidth = 1;
 
-    // marges
     const left=36, right=8, top=8, bottom=22;
     const plotW = Wc-left-right, plotH = Hc-top-bottom;
 
-    // axes Y (4 lignes)
     const maxY = Math.max(1, series[23] || 0);
     const steps = 4;
     ctx.fillStyle = '#666'; ctx.font = '12px system-ui';
@@ -580,7 +567,6 @@
       const val = Math.round(maxY * i/steps);
       ctx.fillText(String(val), 4, y-2);
     }
-    // ticks X (toutes 3h)
     for(let h=0; h<=23; h+=3){
       const x = left + plotW*(h/23);
       ctx.beginPath(); ctx.moveTo(x, top+plotH); ctx.lineTo(x, top+plotH+4); ctx.stroke();
@@ -594,7 +580,6 @@
       chartNoData.style.display = 'none';
     }
 
-    // ligne
     ctx.beginPath();
     for(let h=0; h<24; h++){
       const x = left + plotW*(h/23);
@@ -613,7 +598,6 @@
   loadBoardToPreview();
   initLeaderboard();
 
-  // Charger histo et graph quand on ouvre l’onglet Stats
   document.querySelector('.tab[data-tab="stats"]').addEventListener('click', ()=>{
     if (!historyBody.children.length){
       const lim=+histLimitSel.value||200;
