@@ -17,9 +17,9 @@
     }
     * { box-sizing: border-box; }
     html, body {
-      height: 100dvh;               /* corrige la “barre blanche” sur Android/OnePlus */
+      height: 100dvh;
       min-height: 100dvh;
-      height: -webkit-fill-available; /* fallback iOS */
+      height: -webkit-fill-available;
       overflow: hidden;
       background:#fff;
     }
@@ -29,35 +29,30 @@
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
-    /* Bouton Pseudo près du titre */
     #pseudoBtn{
       padding: 6px 10px;
       border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer;
     }
 
-    /* Viewport scrollable encadré entre le header et la palette */
     #viewport{
       position: fixed; left: 0; right: 0;
       overflow: auto; overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-x pan-y;           /* sera mis à none pendant le pinch interne */
+      touch-action: pan-x pan-y;
       background: #fff; z-index: 1;
     }
 
-    /* Contenu scrollable : sizer = taille réelle après zoom */
     #space{ position: relative; }
-    #sizer{ width: 1px; height: 1px; }     /* dimensions ajustées par JS */
+    #sizer{ width: 1px; height: 1px; }
 
-    /* Scène */
     #stageWrap{
       position: absolute; top: 0; left: 0;
       display:inline-block;
       transform-origin: top left;
-      transition: transform 120ms ease-out; /* fluidité du zoom */
+      transition: transform 120ms ease-out;
     }
     #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
-    /* Palette bas (2 lignes) + boutons +/− empilés (ou dessous en mobile étroit) */
     #paletteBar{
       position: fixed; left: 50%; transform: translateX(-50%);
       bottom: calc(8px + var(--safe-bottom));
@@ -84,7 +79,6 @@
     .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
     .toggle{ display:flex; gap:6px; align-items:center; }
 
-    /* Tip flottant (Trackeur) */
     #trackerTip{
       position: fixed; z-index: 20;
       pointer-events: none;
@@ -101,7 +95,6 @@
     #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
     #trackerTip .meta{ opacity: .8; }
 
-    /* Modal Pseudo / Menu */
     .modal[hidden]{ display:none; }
     .modal{ position: fixed; inset: 0; z-index: 30; }
     .modal-backdrop{ position: absolute; inset: 0; background: rgba(0,0,0,.35); }
@@ -119,7 +112,6 @@
     .modal-actions{ margin-top:12px; display:flex; gap:8px; justify-content:flex-end; }
     .modal-card .error{ color:#c00; margin-top:8px; min-height: 1.2em; }
 
-    /* Boutons palette visibles sur écrans très étroits */
     @media (max-width: 420px){
       #paletteBar{ grid-template-columns: 1fr; }
       .dockZoom{ flex-direction: row; }
@@ -154,7 +146,6 @@
     </label>
   </div>
 
-  <!-- Viewport scrollable borné -->
   <div id="viewport">
     <div id="space">
       <div id="sizer"></div>
@@ -164,7 +155,6 @@
     </div>
   </div>
 
-  <!-- Palette bas : grille 2 lignes + boutons -->
   <aside id="paletteBar" aria-label="Palette de couleurs">
     <div id="paletteGrid" aria-label="Couleurs"></div>
     <div class="dockZoom">
@@ -173,13 +163,11 @@
     </div>
   </aside>
 
-  <!-- Tip flottant Trackeur -->
   <div id="trackerTip" role="status" aria-live="polite">
     <span class="xy">(—, —)</span>
     <span class="meta"></span>
   </div>
 
-  <!-- Modal MENU PSEUDO/ADMIN -->
   <div id="pseudoMenuModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
     <div class="modal-card">
@@ -193,7 +181,6 @@
     </div>
   </div>
 
-  <!-- Modal Pseudo -->
   <div id="pseudoModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
     <div class="modal-card">
@@ -235,13 +222,13 @@
   // === Paramètres mosaïque ===
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const W = 300, H = 300;
-  let PIX = IS_MOBILE ? 8 : 10; // plus léger sur mobile
+  let PIX = IS_MOBILE ? 8 : 10;
   const canvas = document.getElementById('board');
   canvas.width  = W * PIX;
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
 
-  // === Palette (ordre + rouge + 3 peaux) ===
+  // === Palette ===
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
@@ -298,14 +285,13 @@
   }
 
   // === Grilles mémoire ===
-  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1)); // couleur
-  const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // uid
-  const tsGrid     = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null)); // timestamp
+  let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
+  const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null));
+  const tsGrid     = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null));
 
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
 
-  // Grille overlay
   function drawGridOverlay() {
     const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
     ctx.save(); ctx.lineWidth = 1;
@@ -334,7 +320,6 @@
     ctx.restore();
   }
 
-  // Rendu initial
   fullPixels();
   if (localStorage.getItem('pw-show-grid') === '1') { showGridChk.checked = true; drawGridOverlay(); }
   else { showGridChk.checked = false; }
@@ -343,7 +328,6 @@
     fullPixels(); if (showGridChk.checked) drawGridOverlay();
   });
 
-  // Curseur coloré
   function makeColorCursor(hex, size = 22) {
     const r = Math.floor(size/2) - 2;
     const svg =
@@ -358,7 +342,6 @@
   canvas.addEventListener('mouseenter', updateCursor);
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; trackerTip.style.display='none'; });
 
-  // Palette 2 lignes
   function buildPalette(){
     paletteGrid.innerHTML = '';
     colors.forEach((c,i)=>{
@@ -391,7 +374,6 @@
     document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
   }
 
-  // ===== Scroll borné (taille réelle = W*PIX*zoom) =====
   function updateSizer(){
     const scaledW = W * PIX * zoom, scaledH = H * PIX * zoom;
     sizer.style.width  = Math.ceil(scaledW) + 'px';
@@ -406,7 +388,6 @@
     else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
   }
 
-  // ========= Zoom (centré & doux) =========
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
   function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
@@ -433,7 +414,6 @@
   document.getElementById('dockZIn').onclick  = zoomIn;
   document.getElementById('dockZOut').onclick = zoomOut;
 
-  // ====== Pinch-to-zoom (centré & adouci) ======
   const activePointers = new Map();
   let pinchStartDist = 0, pinchStartZoom = 1, pinchInProgress = false;
   function pointersDistance(){
@@ -474,7 +454,6 @@
   viewport.addEventListener('pointercancel', endPointer, { passive:true });
   viewport.addEventListener('pointerleave', endPointer, { passive:true });
 
-  // === Coordonnées + Trackeur ===
   function screenToGrid(clientX, clientY){
     const rect = canvas.getBoundingClientRect();
     const localX = (clientX - rect.left) / zoom;
@@ -492,14 +471,11 @@
   }
   function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
 
-  // Cache pseudos
-  const namesByUid = {};   // uid -> pseudo
+  const namesByUid = {};
   let myName = null;
 
-  // Pseudo UI
   const pseudoBtn    = document.getElementById('pseudoBtn');
 
-  // === Modales menu & pseudo
   const pseudoMenuModal = document.getElementById('pseudoMenuModal');
   const menuChangePseudo = document.getElementById('menuChangePseudo');
   const menuOpenAdmin = document.getElementById('menuOpenAdmin');
@@ -511,55 +487,30 @@
   const pseudoCancel = document.getElementById('pseudoCancel');
   const pseudoError  = document.getElementById('pseudoError');
 
-  // ➕ Met à jour le texte du bouton selon le pseudo
-  function updatePseudoBtn() {
-    pseudoBtn.textContent = myName ? myName : 'Pseudo';
-  }
+  function updatePseudoBtn() { pseudoBtn.textContent = myName ? myName : 'Pseudo'; }
 
-  // ===== Menu: open/close
-  function openPseudoMenu(){
-    pseudoMenuModal.hidden = false;
-  }
-  function closePseudoMenu(){
-    pseudoMenuModal.hidden = true;
-  }
+  function openPseudoMenu(){ pseudoMenuModal.hidden = false; }
+  function closePseudoMenu(){ pseudoMenuModal.hidden = true; }
   menuChangePseudo.addEventListener('click', ()=>{ closePseudoMenu(); openPseudoModal(); });
   menuOpenAdmin.addEventListener('click', ()=>{ window.open('admin.html', '_blank'); });
   menuClose.addEventListener('click', closePseudoMenu);
-  // Le menu peut se fermer en cliquant sur le fond
   pseudoMenuModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoMenu);
 
-  // ===== Modale Pseudo: open/close
   function openPseudoModal(){
     pseudoError.textContent = '';
     pseudoInput.value = myName || '';
-    // Si aucun pseudo => on cache "Annuler" et on bloque la fermeture par fond
-    if (!myName) {
-      pseudoCancel.style.display = 'none';
-    } else {
-      pseudoCancel.style.display = '';
-    }
+    if (!myName) { pseudoCancel.style.display = 'none'; } else { pseudoCancel.style.display = ''; }
     pseudoModal.hidden = false;
     setTimeout(()=> pseudoInput.focus(), 0);
   }
   function closePseudoModal(){ pseudoModal.hidden = true; }
 
-  // Bouton titre ouvre le MENU (pas la modale pseudo directement)
   pseudoBtn.addEventListener('click', openPseudoMenu);
-
-  // Annuler : on NE ferme que si un pseudo existe déjà
-  pseudoCancel.addEventListener('click', ()=>{
-    if (myName) closePseudoModal();
-  });
-  // Clic sur le fond : on NE ferme que si un pseudo existe déjà
-  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', ()=>{
-    if (myName) closePseudoModal();
-  });
-  // Enter pour valider
+  pseudoCancel.addEventListener('click', ()=>{ if (myName) closePseudoModal(); });
+  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', ()=>{ if (myName) closePseudoModal(); });
   pseudoInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') savePseudo(); });
-  // Bloque Échap si aucun pseudo (empêche de fermer la modale)
-document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName && !pseudoModal.hidden){ e.preventDefault(); e.stopPropagation(); } }, true);
-    
+  document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName && !pseudoModal.hidden){ e.preventDefault(); e.stopPropagation(); } }, true);
+
   function normalizeName(s){ return s.trim(); }
   function toKey(s){ return s.toLowerCase().replace(/[^a-z0-9_]/g,''); }
   function isValidName(s){ return /^[A-Za-z0-9_]{3,20}$/.test(s); }
@@ -604,7 +555,7 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
 
       myName = raw;
       namesByUid[CURRENT_UID] = raw;
-      updatePseudoBtn(); // reflète le pseudo sur le bouton
+      updatePseudoBtn();
       closePseudoModal();
     } catch (err){
       console.error(err);
@@ -641,13 +592,11 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
     coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
     updateTracker(e);
   });
-  // support tactile : suivre le doigt
   canvas.addEventListener('pointermove', (e)=>{
     if (e.pointerType === 'touch') updateTracker(e);
   });
   canvas.addEventListener('pointerleave', ()=>{ trackerTip.style.display='none'; });
 
-  // Storage helpers (PNG)
   function formatParisFilename(prefix="snapshot", ext="png"){
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const parts = fmt.formatToParts(new Date());
@@ -667,7 +616,6 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
     return { path, url };
   }
 
-  // Reset & archive ——— PAUSE DU RESET ———
   const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
   const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
@@ -689,12 +637,10 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
     }
   }
 
-  // Présence + compteur clics
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
 
-  // UID courant
   let CURRENT_UID = null;
 
   auth.signInAnonymously().catch(console.error);
@@ -702,13 +648,30 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
     if (!user) return;
     CURRENT_UID = user.uid;
 
-    // Charger et suivre mon pseudo ; ouvrir le modal si absent
+    /* ========= AJOUT : journaliser 1 connexion serveur par onglet ========= */
+    (function logVisitOncePerTab(){
+      const key = 'pw-visit-logged';
+      if (sessionStorage.getItem(key)) return; // déjà compté pour cet onglet
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth()+1).padStart(2,'0');
+      const d = String(now.getDate()).padStart(2,'0');
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const dayKey = `${y}-${m}-${d}`;
+      const minKey = `${hh}:${mm}`;
+      db.ref(`stats/visitsByMinute/${dayKey}/${minKey}`)
+        .transaction(cur => (cur || 0) + 1)
+        .catch(()=>{})
+        .finally(()=>{ sessionStorage.setItem(key, '1'); });
+    })();
+    /* ======== fin AJOUT ======== */
+
     db.ref(`users/${CURRENT_UID}/name`).on('value', s=>{
       const n = s.val();
       myName = (typeof n === 'string' && n) ? n : null;
       if (myName) namesByUid[CURRENT_UID] = myName;
       updatePseudoBtn();
-      // Auto-popup si aucun pseudo : ouverture obligatoire
       if (!myName) openPseudoModal();
     });
 
@@ -731,7 +694,6 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
 
     const pixelsRef = db.ref('pixels');
 
-    // Chargement progressif initial
     pixelsRef.once('value').then(snap => {
       const val = snap.val() || {};
       let i = 0; const keys = Object.keys(val);
@@ -754,7 +716,6 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
       requestAnimationFrame(chunk);
     });
 
-    // Temps réel
     let overlayQueued = false;
     function queueOverlay(){
       if (!showGridChk.checked) return;
@@ -788,9 +749,8 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
       }
     });
 
-    // Pose de pixel — BLOQUÉ si pas de pseudo
     canvas.addEventListener('click', async (e)=>{
-      if (!myName) { openPseudoModal(); return; } // <-- blocage sans pseudo
+      if (!myName) { openPseudoModal(); return; }
       const rect = canvas.getBoundingClientRect();
       const localX = (e.clientX - rect.left) / zoom;
       const localY = (e.clientY - rect.top)  / zoom;
@@ -812,7 +772,6 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
       }
     });
 
-    // Raccourci Shift + molette (desktop) = changer de couleur
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
@@ -823,16 +782,13 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
       }
     }, { passive: false });
 
-    // Archives (actives)
     setInterval(tryArchive, 10*1000);
   });
 
-  // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
   updatePseudoBtn();
 
-  // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
   if (window.visualViewport){
     visualViewport.addEventListener('resize', layoutViewport);
     visualViewport.addEventListener('scroll',  layoutViewport);
@@ -842,17 +798,14 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
   window.addEventListener('resize', ()=>{ relayoutAll(); });
   window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
 
-  // Recalage si la palette ou la barre du haut change de taille
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
   new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
 
-  // Compte à rebours en pause
   document.getElementById('countdown').textContent = 'Pause';
 
-  // ==== Heartbeat fréquentation (alimente stats/onlineByHour) ====
   (function setupOnlineByHourHeartbeat(){
-    const PING_EVERY_MS = 5 * 60 * 1000; // 5 minutes
-    const KEY_PREFIX = 'pw-traffic-last-'; // sessionStorage
+    const PING_EVERY_MS = 5 * 60 * 1000;
+    const KEY_PREFIX = 'pw-traffic-last-';
 
     function dateKey(d){
       const y=d.getFullYear();
@@ -868,7 +821,7 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
       const hour = hourOf(now);
       const dedupKey = `${KEY_PREFIX}${dayKey}-${hour}`;
       const last = Number(sessionStorage.getItem(dedupKey) || 0);
-      if (Date.now() - last < (4 * 60 * 1000)) return; // dédup locale
+      if (Date.now() - last < (4 * 60 * 1000)) return;
       sessionStorage.setItem(dedupKey, String(Date.now()));
       db.ref(`stats/onlineByHour/${dayKey}/${hour}`).transaction(cur => (cur || 0) + 1).catch(()=>{});
     }
@@ -887,4 +840,3 @@ document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && !myName &&
   </script>
 </body>
 </html>
-
