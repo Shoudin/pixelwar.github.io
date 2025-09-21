@@ -101,7 +101,7 @@
     #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
     #trackerTip .meta{ opacity: .8; }
 
-    /* Modal Pseudo / Menu */
+    /* Modal Pseudo */
     .modal[hidden]{ display:none; }
     .modal{ position: fixed; inset: 0; z-index: 30; }
     .modal-backdrop{ position: absolute; inset: 0; background: rgba(0,0,0,.35); }
@@ -179,21 +179,7 @@
     <span class="meta"></span>
   </div>
 
-  <!-- Modal MENU PSEUDO/ADMIN (nouvelle modale) -->
-  <div id="pseudoMenuModal" class="modal" hidden>
-    <div class="modal-backdrop"></div>
-    <div class="modal-card">
-      <h2>Mon compte</h2>
-      <p class="hint">Choisis une option :</p>
-      <div class="modal-actions" style="justify-content:flex-start">
-        <button id="menuChangePseudo">Changer mon pseudo</button>
-        <button id="menuOpenAdmin">Admin</button>
-        <button id="menuClose" style="margin-left:auto">Fermer</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Pseudo (existante) -->
+  <!-- Modal Pseudo -->
   <div id="pseudoModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
     <div class="modal-card">
@@ -507,43 +493,21 @@
 
   // Pseudo UI
   const pseudoBtn    = document.getElementById('pseudoBtn');
-
-  // === Nouvelle modale menu ===
-  const pseudoMenuModal = document.getElementById('pseudoMenuModal');
-  const menuChangePseudo = document.getElementById('menuChangePseudo');
-  const menuOpenAdmin = document.getElementById('menuOpenAdmin');
-  const menuClose = document.getElementById('menuClose');
-
-  // Modale pseudo (existante)
   const pseudoModal  = document.getElementById('pseudoModal');
   const pseudoInput  = document.getElementById('pseudoInput');
   const pseudoSave   = document.getElementById('pseudoSave');
   const pseudoCancel = document.getElementById('pseudoCancel');
   const pseudoError  = document.getElementById('pseudoError');
 
-  // ➕ Met à jour le texte du bouton selon le pseudo
+  // ➕ Nouveau : met à jour le texte du bouton en fonction du pseudo
   function updatePseudoBtn() {
     pseudoBtn.textContent = myName ? myName : 'Pseudo';
   }
 
-  // Menu: open/close
-  function openPseudoMenu(){
-    pseudoMenuModal.hidden = false;
-  }
-  function closePseudoMenu(){
-    pseudoMenuModal.hidden = true;
-  }
-  // Actions du menu
-  menuChangePseudo.addEventListener('click', ()=>{ closePseudoMenu(); openPseudoModal(); });
-  menuOpenAdmin.addEventListener('click', ()=>{ window.open('admin.html', '_blank'); });
-  menuClose.addEventListener('click', closePseudoMenu);
-  pseudoMenuModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoMenu);
-
-  // Modale Pseudo: open/close (ancienne logique conservée)
   function openPseudoModal(){
     pseudoError.textContent = '';
     pseudoInput.value = myName || '';
-    // Si aucun pseudo => on cache "Annuler"
+    // ➕ Nouveau : si aucun pseudo encore, on masque "Annuler"
     if (!myName) {
       pseudoCancel.style.display = 'none';
     } else {
@@ -553,8 +517,7 @@
     setTimeout(()=> pseudoInput.focus(), 0);
   }
   function closePseudoModal(){ pseudoModal.hidden = true; }
-  // ⚠️ On remplace l'ancienne action du bouton Pseudo: il ouvre désormais le MENU
-  pseudoBtn.addEventListener('click', openPseudoMenu);
+  pseudoBtn.addEventListener('click', openPseudoModal);
   pseudoCancel.addEventListener('click', closePseudoModal);
   pseudoModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoModal);
   pseudoInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') savePseudo(); });
@@ -603,7 +566,7 @@
 
       myName = raw;
       namesByUid[CURRENT_UID] = raw;
-      updatePseudoBtn(); // reflète le pseudo sur le bouton
+      updatePseudoBtn(); // ➕ Nouveau : bouton mis à jour
       closePseudoModal();
     } catch (err){
       console.error(err);
@@ -706,8 +669,8 @@
       const n = s.val();
       myName = (typeof n === 'string' && n) ? n : null;
       if (myName) namesByUid[CURRENT_UID] = myName;
-      updatePseudoBtn(); // reflète le pseudo sur le bouton
-      // Auto-popup si aucun pseudo défini (on ouvre DIRECT la modale pseudo, pas le menu)
+      updatePseudoBtn(); // ➕ Nouveau : reflète le pseudo sur le bouton
+      // Auto-popup si aucun pseudo défini
       if (!myName) openPseudoModal();
     });
 
@@ -828,7 +791,7 @@
   // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
-  updatePseudoBtn(); // initialise le texte du bouton au démarrage
+  updatePseudoBtn(); // ➕ Nouveau : initialise le texte du bouton au démarrage
 
   // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
   if (window.visualViewport){
@@ -846,7 +809,44 @@
 
   // Compte à rebours en pause
   document.getElementById('countdown').textContent = 'Pause';
+
+  // ==== Heartbeat fréquentation (alimente stats/onlineByHour) ====
+  // Compte 1 "tick" toutes les 5 minutes par onglet (visible) pour l'heure en cours.
+  // Le graphe admin cumule ces ticks → courbe par heure. Anti-doublon via sessionStorage.
+  (function setupOnlineByHourHeartbeat(){
+    const PING_EVERY_MS = 5 * 60 * 1000; // 5 minutes
+    const KEY_PREFIX = 'pw-traffic-last-'; // sessionStorage
+
+    function dateKey(d){
+      const y=d.getFullYear();
+      const m=String(d.getMonth()+1).padStart(2,'0');
+      const dd=String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${dd}`;
+    }
+    function hourOf(d){ return d.getHours(); }
+
+    function ping(){
+      const now = new Date();
+      const dayKey = dateKey(now);
+      const hour = hourOf(now);
+      const dedupKey = `${KEY_PREFIX}${dayKey}-${hour}`;
+      const last = Number(sessionStorage.getItem(dedupKey) || 0);
+      if (Date.now() - last < (4 * 60 * 1000)) return; // dédup locale
+      sessionStorage.setItem(dedupKey, String(Date.now()));
+      db.ref(`stats/onlineByHour/${dayKey}/${hour}`).transaction(cur => (cur || 0) + 1).catch(()=>{});
+    }
+
+    setTimeout(ping, 5000); // premier tick après le load
+    let timer = null;
+    function start(){ if (timer) return; timer = setInterval(()=>{ if (document.visibilityState === 'visible') ping(); }, PING_EVERY_MS); }
+    function stop(){ if (timer){ clearInterval(timer); timer=null; } }
+
+    document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') { ping(); start(); } else { stop(); } });
+    window.addEventListener('pagehide', stop);
+    window.addEventListener('beforeunload', stop);
+
+    start();
+  })();
   </script>
 </body>
 </html>
-
