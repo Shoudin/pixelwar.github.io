@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Le Grand Gribidouillage — Admin</title>
+  <title>Le Grand Gribidouillage</title>
   <style>
     :root{ --pad:16px; --gap:12px; --card:#fff; --ink:#111; --muted:#666; --bd:#ddd; }
     *{ box-sizing:border-box; }
@@ -42,12 +42,19 @@
     th{ background:#fafafa; position:sticky; top:0; z-index:10; }
     .tablewrap{ max-height: 60vh; overflow:auto; border:1px solid var(--bd); border-radius:10px; background:#fff; }
     .right{ text-align:right; }
+
+    /* Chart */
+    .charthead{ display:flex; align-items:center; gap:8px; }
+    .daynav{ display:flex; align-items:center; gap:4px; }
+    .daynav button{ width:32px; height:28px; font-weight:700; }
+    #chartWrap{ position:relative; width:100%; max-width:680px; }
+    #chartNoData{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(255,255,255,.85); font-size:14px; }
   </style>
 </head>
 <body>
   <header>
     <div class="row">
-      <h1>Admin — Le Grand Gribidouillage</h1>
+      <h1>Admin — Pixel War</h1>
       <span class="muted">• contrôle & maintenance</span>
     </div>
     <div class="tabs" id="tabs">
@@ -65,9 +72,9 @@
           <section class="grid">
             <div class="card">
               <h2 style="margin-top:0">Accès admin</h2>
-              <p class="muted">Saisis le <strong>code admin</strong> .</p>
+              <p class="muted">Saisis le <strong>code admin</strong> défini dans <code>config/adminCode</code> (Realtime DB).</p>
               <div class="row">
-                <input id="adminCodeInput" type="password" placeholder="PROUT" />
+                <input id="adminCodeInput" type="password" placeholder="••••••••" />
                 <button id="adminCodeCheck">Déverrouiller</button>
                 <span id="adminGateStatus" class="muted">verrouillé</span>
               </div>
@@ -104,7 +111,7 @@
                   <button id="btnRefreshPreview">Rafraîchir</button>
                   <button id="btnExportPNG">Exporter PNG</button>
                   <button id="btnArchivePNG" disabled>Archiver vers Storage</button>
-                  <span class="note">Palette & dimensions: 300×300, couleurs indexées.</span>
+                  <span class="note">Export 1200×1200, rendu net (x4).</span>
                 </div>
               </div>
             </div>
@@ -117,7 +124,7 @@
               <div class="grid">
                 <div>
                   <div class="muted">Purge complète (efface <code>pixels/</code> & écrit <code>config/lastResetAt</code>)</div>
-                  <div class="row" style="margin-top:8px)">
+                  <div class="row" style="margin-top:8px">
                     <input id="confirmClear" type="text" placeholder='Tape "CLEAR" pour confirmer' />
                     <button id="btnClear" class="danger" disabled>Vider la mosaïque</button>
                   </div>
@@ -132,6 +139,7 @@
                 <li>SDK: Firebase compat 10.12.2</li>
                 <li>DB: <code>pixels/{x}_{y} → { color:number, author?:uid, ts?:number }</code></li>
                 <li>Historique: <code>history/{x}_{y}/{pushId} → { color, author, ts }</code></li>
+                <li>Fréquentation: <code>stats/onlineByHour/YYYY-MM-DD/{HH}</code></li>
                 <li>Archive Storage: <code>archive/</code></li>
               </ul>
               <div id="sysStatus" class="muted">Prêt.</div>
@@ -165,8 +173,24 @@
             </div>
           </section>
 
-          <!-- Colonne B : Historique (liste) -->
+          <!-- Colonne B : Fréquentation + Historique -->
           <section class="grid">
+            <div class="card">
+              <div class="row" style="justify-content:space-between; align-items:center">
+                <h2 style="margin:0">Fréquentation cumulée par heure</h2>
+                <div class="daynav">
+                  <button id="dayPrev" title="Jour précédent">⟨</button>
+                  <span id="dayLabel" class="muted">—</span>
+                  <button id="dayNext" title="Jour suivant">⟩</button>
+                </div>
+              </div>
+              <div id="chartWrap" style="margin-top:8px">
+                <canvas id="chart" width="680" height="240"></canvas>
+                <div id="chartNoData">Aucune donnée pour ce jour</div>
+              </div>
+              <p class="note" style="margin-top:8px">Source: <code>stats/onlineByHour/YYYY-MM-DD/{HH}</code>. Ligne = somme cumulée (0 → 23h).</p>
+            </div>
+
             <div class="card">
               <div class="row" style="justify-content:space-between">
                 <h2 style="margin:0">Historique des poses</h2>
@@ -213,6 +237,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
   <script>
+  // === Firebase ===
   const firebaseConfig = {
     apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
     authDomain: "shoudinpixelwar.firebaseapp.com",
@@ -228,7 +253,9 @@
   const db = firebase.database();
   const storage = firebase.storage();
 
+  // === Constantes ===
   const W=300, H=300, TOTAL_CELLS=W*H;
+  const EXPORT_SCALE = 4; // -> 1200x1200
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
     '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
@@ -243,16 +270,19 @@
   const paneDash = document.getElementById('pane-dash');
   const paneStats = document.getElementById('pane-stats');
 
+  // KPIs & system
   const kOnline = document.getElementById('kOnline');
   const kPixels = document.getElementById('kPixels');
   const kClicks = document.getElementById('kClicks');
   const lastResetEl = document.getElementById('lastReset');
   const sysStatus = document.getElementById('sysStatus');
 
+  // Admin gate
   const adminCodeInput = document.getElementById('adminCodeInput');
   const adminCodeCheck = document.getElementById('adminCodeCheck');
   const adminGateStatus = document.getElementById('adminGateStatus');
 
+  // Preview / Export
   const preview = document.getElementById('preview');
   const pctx = preview.getContext('2d');
   const btnRefreshPreview = document.getElementById('btnRefreshPreview');
@@ -262,14 +292,25 @@
   const confirmClear = document.getElementById('confirmClear');
   const btnClear = document.getElementById('btnClear');
 
-  // Stats pane
+  // Stats pane refs
   const historyBody = document.getElementById('historyBody');
   const btnReloadHistory = document.getElementById('btnReloadHistory');
   const histLimitSel = document.getElementById('histLimit');
+
   const leaderBody = document.getElementById('leaderBody');
+
+  // Chart refs
+  const chart = document.getElementById('chart');
+  const chartCtx = chart.getContext('2d');
+  const chartWrap = document.getElementById('chartWrap');
+  const chartNoData = document.getElementById('chartNoData');
+  const dayPrev = document.getElementById('dayPrev');
+  const dayNext = document.getElementById('dayNext');
+  const dayLabel = document.getElementById('dayLabel');
 
   let ADMIN_OK=false, CURRENT_UID=null;
 
+  // Tabs
   tabs.addEventListener('click', (e)=>{
     const t = e.target.closest('.tab'); if(!t) return;
     document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
@@ -279,6 +320,7 @@
     paneStats.classList.toggle('active', id==='stats');
   });
 
+  // Utils
   function tsToFR(ts){ if(!ts) return '—';
     return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium', timeStyle:'short' }).format(new Date(ts));
   }
@@ -292,9 +334,11 @@
   }
   confirmClear.addEventListener('input', guard);
 
+  // Auth
   auth.signInAnonymously().catch(console.error);
   auth.onAuthStateChanged(u => { CURRENT_UID = u ? u.uid : null; });
 
+  // Admin code
   adminCodeCheck.addEventListener('click', async ()=>{
     try{
       const snap = await db.ref('config/adminCode').once('value');
@@ -307,6 +351,7 @@
     }catch{ sysStatus.textContent = 'Erreur lecture adminCode'; }
   });
 
+  // KPIs simples
   db.ref('presence').on('value', s => {
     const v = s.val() || {};
     kOnline.textContent = String(Object.keys(v).length);
@@ -314,6 +359,7 @@
   db.ref('stats/clicksTotal').on('value', s => { kClicks.textContent = String(s.val() || 0); });
   db.ref('config/lastResetAt').on('value', s => { const ts=s.val(); lastResetEl.textContent = ts ? tsToFR(ts) : '—'; });
 
+  // ===== Aperçu + Export (x4) =====
   function loadBoardToPreview(){
     return new Promise(async (resolve, reject)=>{
       try{
@@ -337,26 +383,53 @@
     });
   }
   btnRefreshPreview.addEventListener('click', ()=>{ loadBoardToPreview(); });
-  btnExportPNG.addEventListener('click', async ()=>{
-    await loadBoardToPreview(); await new Promise(r=>requestAnimationFrame(r));
-    preview.toBlob(b=>{
-      if(!b){ const a=document.createElement('a'); a.href=preview.toDataURL('image/png'); a.download=`export_${Date.now()}.png`; document.body.appendChild(a); a.click(); a.remove(); return; }
-      const a=document.createElement('a'); const url=URL.createObjectURL(b);
-      a.href=url; a.download=`export_${Date.now()}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),0);
+
+  // Export en 1200×1200, pixel-perfect (pas de relecture DB)
+  function exportScaledPNG(){
+    const out = document.createElement('canvas');
+    out.width = W * EXPORT_SCALE;
+    out.height = H * EXPORT_SCALE;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(preview, 0, 0, out.width, out.height);
+    out.toBlob(b=>{
+      if(!b){
+        const a=document.createElement('a');
+        a.href=out.toDataURL('image/png');
+        a.download=`export_${Date.now()}_x${EXPORT_SCALE}.png`;
+        document.body.appendChild(a); a.click(); a.remove(); return;
+      }
+      const a=document.createElement('a');
+      const url=URL.createObjectURL(b);
+      a.href=url; a.download=`export_${Date.now()}_x${EXPORT_SCALE}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),0);
     }, 'image/png');
+  }
+  btnExportPNG.addEventListener('click', async ()=>{
+    await loadBoardToPreview();            // s’assure que preview est à jour
+    await new Promise(r=>requestAnimationFrame(r));
+    exportScaledPNG();
   });
+
   btnArchivePNG.addEventListener('click', async ()=>{
     if(!ADMIN_OK) return;
     await loadBoardToPreview(); await new Promise(r=>requestAnimationFrame(r));
-    preview.toBlob(async blob=>{
+    // archive aussi en x4
+    const out = document.createElement('canvas');
+    out.width = W * EXPORT_SCALE; out.height = H * EXPORT_SCALE;
+    const octx = out.getContext('2d'); octx.imageSmoothingEnabled=false;
+    octx.drawImage(preview, 0, 0, out.width, out.height);
+    out.toBlob(async blob=>{
       if(!blob) return;
       const fmt=new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
       const p=fmt.formatToParts(new Date()); const g=t=>p.find(x=>x.type===t)?.value||'';
-      const name=`archive/admin_${g('year')}-${g('month')}-${g('day')}_${g('hour')}-${g('minute')}-${g('second')}.png`;
+      const name=`archive/admin_${g('year')}-${g('month')}-${g('day')}_${g('hour')}-${g('minute')}-${g('second')}_x${EXPORT_SCALE}.png`;
       try{ await storage.ref().child(name).put(blob,{contentType:'image/png'}); sysStatus.textContent=`Archivé: ${name}`; }
       catch{ sysStatus.textContent='Échec archive (règles Storage ?)'; }
     }, 'image/png');
   });
+
   btnClear.addEventListener('click', async ()=>{
     if(!ADMIN_OK || confirmClear.value!=='CLEAR') return;
     if(!confirm('Confirmer la purge complète du board ?')) return;
@@ -365,6 +438,7 @@
   });
 
   // ===== Statistiques =====
+  // Pseudos
   const namesByUid = {};
   function ensureName(uid){
     if(!uid || namesByUid[uid]) return Promise.resolve();
@@ -384,7 +458,7 @@
         while(i<coords.length && performance.now()-t0<14){
           const key=coords[i++]; const [x,y]=key.split('_').map(Number);
           const list=root[key]||{};
-          for(const pid in list){ const v=list[pid]||{}; rows.push({ ts: +v.ts||0, author: v.author||null, x, y }); }
+          for(const pid in list){ const v=list[pid]||{}; rows.push({ ts:+v.ts||0, author:v.author||null, x, y }); }
         }
         if(i<coords.length) requestAnimationFrame(chunk); else resolve();
       }
@@ -407,21 +481,19 @@
     historyBody.appendChild(frag);
     sysStatus.textContent=`Historique chargé (${take.length} entrées).`;
   }
-  btnReloadHistory.addEventListener('click', ()=>{ const lim=+histLimitSel.value||200; loadHistory(lim); });
+  document.getElementById('btnReloadHistory').addEventListener('click', ()=>{ const lim=+histLimitSel.value||200; loadHistory(lim); });
 
   // Hit parade (temps réel) — exclut UIDs sans pseudo, affiche %
   const pixelOwners = {};       // "x_y" -> uid|null
   const ownerCount = new Map(); // uid -> count
-
   function addCount(uid){ if(!uid) return; ownerCount.set(uid,(ownerCount.get(uid)||0)+1); }
   function subCount(uid){ if(!uid) return; const n=(ownerCount.get(uid)||0)-1; if(n<=0) ownerCount.delete(uid); else ownerCount.set(uid,n); }
 
   function renderLeaderboard(){
-    const entries=Array.from(ownerCount.entries()); // [uid, count]
-    // Attendre les pseudos puis filtrer ceux qui n'en ont pas
+    const entries=Array.from(ownerCount.entries());
     const uids=entries.map(([uid])=>uid);
     Promise.all(uids.map(ensureName)).then(()=>{
-      const withNames=entries.filter(([uid])=>Boolean(namesByUid[uid])); // exclude no-name
+      const withNames=entries.filter(([uid])=>Boolean(namesByUid[uid]));
       withNames.sort((a,b)=>b[1]-a[1]);
       const top=withNames.slice(0,20);
 
@@ -433,10 +505,8 @@
         const tdName=document.createElement('td'); tdName.textContent=namesByUid[uid];
         const tdN=document.createElement('td'); tdN.className='right'; tdN.textContent=String(n);
         const tdPct=document.createElement('td'); tdPct.className='right';
-        const pct = (n / TOTAL_CELLS) * 100;
-        tdPct.textContent = (pct >= 1 ? pct.toFixed(1) : pct.toFixed(2)) + '%';
-        tr.append(tdRank, tdName, tdN, tdPct);
-        frag.appendChild(tr);
+        const pct=(n/TOTAL_CELLS)*100; tdPct.textContent=(pct>=1?pct.toFixed(1):pct.toFixed(2))+'%';
+        tr.append(tdRank, tdName, tdN, tdPct); frag.appendChild(tr);
       }
       leaderBody.appendChild(frag);
     });
@@ -446,7 +516,6 @@
     const snap=await db.ref('pixels').once('value'); const data=snap.val()||{};
     for(const k in data){ const v=data[k]||{}; const uid=v.author||null; pixelOwners[k]=uid; if(uid) addCount(uid); }
     renderLeaderboard();
-
     const ref=db.ref('pixels');
     ref.on('child_added', s=>{
       const k=s.key; const v=s.val()||{}; const newUid=v.author||null;
@@ -458,11 +527,99 @@
     });
   }
 
-  // Inits
+  // ===== Graph fréquentation cumulée =====
+  const chart = document.getElementById('chart');
+  const chartCtx = chart.getContext('2d');
+  const chartNoData = document.getElementById('chartNoData');
+  const dayPrev = document.getElementById('dayPrev');
+  const dayNext = document.getElementById('dayNext');
+  const dayLabel = document.getElementById('dayLabel');
+
+  function dateToKey(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+  function frDayLabel(d){ return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium' }).format(d); }
+
+  let selectedDay = new Date();
+  function setDayLabel(){ dayLabel.textContent = frDayLabel(selectedDay); }
+
+  async function loadDayAndRender(){
+    setDayLabel();
+    const key = dateToKey(selectedDay);
+    const snap = await db.ref(`stats/onlineByHour/${key}`).once('value');
+    const obj = snap.val() || null;
+
+    const hours = Array.from({length:24}, (_,h)=> (obj && typeof obj[h]==='number') ? obj[h] : 0);
+    const total = hours.reduce((a,b)=>a+b,0);
+    const cumul = [];
+    let s=0; for (let i=0;i<24;i++){ s += hours[i]; cumul.push(s); }
+
+    drawLineChart(cumul, total>0);
+  }
+
+  function drawLineChart(series, hasData){
+    const ctx = chartCtx;
+    const Wc = chart.width, Hc = chart.height;
+    ctx.clearRect(0,0,Wc,Hc);
+
+    // fond
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,Wc,Hc);
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+
+    // marges
+    const left=36, right=8, top=8, bottom=22;
+    const plotW = Wc-left-right, plotH = Hc-top-bottom;
+
+    // axes Y (4 lignes)
+    const maxY = Math.max(1, series[23] || 0);
+    const steps = 4;
+    ctx.fillStyle = '#666'; ctx.font = '12px system-ui';
+    for(let i=0;i<=steps;i++){
+      const y = top + plotH*(1 - i/steps);
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left+plotW, y); ctx.stroke();
+      const val = Math.round(maxY * i/steps);
+      ctx.fillText(String(val), 4, y-2);
+    }
+    // ticks X (toutes 3h)
+    for(let h=0; h<=23; h+=3){
+      const x = left + plotW*(h/23);
+      ctx.beginPath(); ctx.moveTo(x, top+plotH); ctx.lineTo(x, top+plotH+4); ctx.stroke();
+      ctx.fillText(String(h)+'h', x-6, top+plotH+16);
+    }
+
+    if (!hasData){
+      chartNoData.style.display = 'flex';
+      return;
+    } else {
+      chartNoData.style.display = 'none';
+    }
+
+    // ligne
+    ctx.beginPath();
+    for(let h=0; h<24; h++){
+      const x = left + plotW*(h/23);
+      const y = top + plotH*(1 - (series[h]/maxY));
+      if (h===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  dayPrev.addEventListener('click', ()=>{ selectedDay = new Date(selectedDay.getTime()-24*3600*1000); loadDayAndRender(); });
+  dayNext.addEventListener('click', ()=>{ selectedDay = new Date(selectedDay.getTime()+24*3600*1000); loadDayAndRender(); });
+
+  // ===== Init =====
   loadBoardToPreview();
   initLeaderboard();
+
+  // Charger histo et graph quand on ouvre l’onglet Stats
   document.querySelector('.tab[data-tab="stats"]').addEventListener('click', ()=>{
-    if(!historyBody.children.length){ const lim=+histLimitSel.value||200; loadHistory(lim); }
+    if (!historyBody.children.length){
+      const lim=+histLimitSel.value||200;
+      loadHistory(lim);
+    }
+    loadDayAndRender();
   });
   </script>
 </body>
