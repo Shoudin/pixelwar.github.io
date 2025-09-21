@@ -188,7 +188,7 @@
           <section class="grid">
             <div class="card">
               <div class="row" style="justify-content:space-between; align-items:center">
-                <h2 style="margin:0">Fréquentation cumulée par heure</h2>
+               <h2 style="margin:0">Connexions par minute</h2>
                 <div class="daynav">
                   <button id="dayPrev" title="Jour précédent">⟨</button>
                   <span id="dayLabel" class="muted">—</span>
@@ -199,7 +199,7 @@
                 <canvas id="chart" width="680" height="240"></canvas>
                 <div id="chartNoData">Aucune donnée pour ce jour</div>
               </div>
-              <p class="note" style="margin-top:8px">Source: <code>stats/onlineByHour/YYYY-MM-DD/{HH}</code>. Ligne = somme cumulée (0 → 23h).</p>
+             <p class="note" style="margin-top:8px">Source: <code>stats/visitsByMinute/YYYY-MM-DD/HH:mm</code>.Ligne = visites/minute (chargements de la mosaïque).</p>
             </div>
 
             <div class="card">
@@ -614,52 +614,84 @@
   function frDayLabel(d){ if (HAS_DATESTYLE) return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium' }).format(d); var day=('0'+d.getDate()).slice(-2), mon=('0'+(d.getMonth()+1)).slice(-2), y=d.getFullYear(); return day+'/'+mon+'/'+y; }
   var selectedDay = new Date();
   function setDayLabel(){ document.getElementById('dayLabel').textContent = frDayLabel(selectedDay); }
-  function loadDayAndRender(){
-    setDayLabel();
-    var key = dateToKey(selectedDay);
-    db.ref('stats/onlineByHour/'+key).once('value').then(function(snap){
-      var obj = snap.val() || null;
-      var hours = []; for (var h=0;h<24;h++){ hours.push(obj && typeof obj[h]==='number' ? obj[h] : 0); }
-      var total = 0; for (var i=0;i<24;i++) total += hours[i];
-      var cumul=[]; var s=0; for (var j=0;j<24;j++){ s+=hours[j]; cumul.push(s); }
-      drawLineChart(cumul, total>0);
-    });
+ 
+    
+    function loadDayAndRender(){
+  setDayLabel();
+  var key = dateToKey(selectedDay);
+  db.ref('stats/visitsByMinute/'+key).once('value').then(function(snap){
+    var raw = snap.val() || {};
+    // Série de 24*60 minutes ; null quand pas de point pour couper la ligne
+    var series = [];
+    for (var h=0; h<24; h++){
+      for (var m=0; m<60; m++){
+        var hh = ('0'+h).slice(-2);
+        var mm = ('0'+m).slice(-2);
+        var k  = hh+':'+mm;
+        var v  = raw[k];
+        series.push((typeof v === 'number') ? v : null);
+      }
+    }
+    var hasData = series.some(function(v){ return typeof v === 'number'; });
+    drawLineChart(series, hasData);
+  });
+}
+ function drawLineChart(series, hasData){
+  var Wc = chart.width, Hc = chart.height;
+  chartCtx.clearRect(0,0,Wc,Hc);
+  chartCtx.fillStyle = '#fff'; chartCtx.fillRect(0,0,Wc,Hc);
+  chartCtx.strokeStyle='#ddd'; chartCtx.lineWidth=1;
+
+  var left=40, right=8, top=8, bottom=22;
+  var plotW = Wc-left-right, plotH=Hc-top-bottom;
+
+  // max Y sur les valeurs non nulles
+  var maxY = 1;
+  for (var i=0;i<series.length;i++){
+    var v = series[i];
+    if (typeof v === 'number' && v > maxY) maxY = v;
   }
-  function drawLineChart(series, hasData){
-    var Wc = chart.width, Hc = chart.height;
-    chartCtx.clearRect(0,0,Wc,Hc);
-    chartCtx.fillStyle = '#fff'; chartCtx.fillRect(0,0,Wc,Hc);
-    chartCtx.strokeStyle='#ddd'; chartCtx.lineWidth=1;
 
-    var left=36, right=8, top=8, bottom=22;
-    var plotW = Wc-left-right, plotH=Hc-top-bottom;
-
-    var maxY = Math.max(1, series[23] || 0);
-    var steps=4;
-    chartCtx.fillStyle='#666'; chartCtx.font='12px system-ui';
-    for(var i=0;i<=steps;i++){
-      var y = top + plotH*(1 - i/steps);
-      chartCtx.beginPath(); chartCtx.moveTo(left,y); chartCtx.lineTo(left+plotW,y); chartCtx.stroke();
-      var val = Math.round(maxY * i/steps);
-      chartCtx.fillText(String(val), 4, y-2);
-    }
-    for(var h=0; h<=23; h+=3){
-      var x = left + plotW*(h/23);
-      chartCtx.beginPath(); chartCtx.moveTo(x, top+plotH); chartCtx.lineTo(x, top+plotH+4); chartCtx.stroke();
-      chartCtx.fillText(String(h)+'h', x-6, top+plotH+16);
-    }
-
-    var chartNoData = document.getElementById('chartNoData');
-    if (!hasData){ chartNoData.style.display='flex'; return; } else { chartNoData.style.display='none'; }
-
-    chartCtx.beginPath();
-    for(var k=0;k<24;k++){
-      var x2 = left + plotW*(k/23);
-      var y2 = top + plotH*(1 - (series[k]/maxY));
-      if (k===0) chartCtx.moveTo(x2,y2); else chartCtx.lineTo(x2,y2);
-    }
-    chartCtx.strokeStyle='#111'; chartCtx.lineWidth=2; chartCtx.stroke();
+  // Grille horizontale + labels Y
+  var steps=4;
+  chartCtx.fillStyle='#666'; chartCtx.font='12px system-ui';
+  for(var i=0;i<=steps;i++){
+    var y = top + plotH*(1 - i/steps);
+    chartCtx.beginPath(); chartCtx.moveTo(left,y); chartCtx.lineTo(left+plotW,y); chartCtx.stroke();
+    var val = Math.round(maxY * i/steps);
+    chartCtx.fillText(String(val), 6, y-2);
   }
+
+  // Ticks heures (0h, 6h, 12h, 18h, 24h)
+  for(var h=0; h<=24; h+=6){
+    var idx = Math.min(series.length-1, h*60);
+    var x = left + plotW*(idx/(series.length-1));
+    chartCtx.beginPath(); chartCtx.moveTo(x, top+plotH); chartCtx.lineTo(x, top+plotH+4); chartCtx.stroke();
+    chartCtx.fillText(String(h)+'h', x-8, top+plotH+16);
+  }
+
+  // Message “pas de données”
+  var chartNoData = document.getElementById('chartNoData');
+  if (!hasData){ chartNoData.style.display='flex'; return; } else { chartNoData.style.display='none'; }
+
+  // Tracé avec coupures : on NE relie PAS les minutes sans données (null)
+  chartCtx.beginPath();
+  chartCtx.strokeStyle='#111'; chartCtx.lineWidth=2;
+  var inSeg = false;
+  for(var k=0;k<series.length;k++){
+    var v = series[k];
+    var x = left + plotW*(k/(series.length-1));
+    if (typeof v === 'number'){
+      var y = top + plotH*(1 - (v/maxY));
+      if (!inSeg){ chartCtx.moveTo(x,y); inSeg = true; }
+      else { chartCtx.lineTo(x,y); }
+    } else {
+      inSeg = false; // coupe la ligne
+    }
+  }
+  chartCtx.stroke();
+}
+
   document.getElementById('dayPrev').addEventListener('click', function(){ selectedDay = new Date(selectedDay.getTime()-24*3600*1000); loadDayAndRender(); });
   document.getElementById('dayNext').addEventListener('click', function(){ selectedDay = new Date(selectedDay.getTime()+24*3600*1000); loadDayAndRender(); });
 
