@@ -179,7 +179,7 @@
     <span class="meta"></span>
   </div>
 
-  <!-- Modal MENU PSEUDO/ADMIN (nouvelle modale) -->
+  <!-- Modal MENU PSEUDO/ADMIN -->
   <div id="pseudoMenuModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
     <div class="modal-card">
@@ -193,7 +193,7 @@
     </div>
   </div>
 
-  <!-- Modal Pseudo (existante) -->
+  <!-- Modal Pseudo -->
   <div id="pseudoModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
     <div class="modal-card">
@@ -215,26 +215,17 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
   <script>
-  // === Config Firebase (remplace PASTE_ME) ===
+  // === Config Firebase (TA CONFIG) ===
   const firebaseConfig = {
-
-  apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
-
-  authDomain: "shoudinpixelwar.firebaseapp.com",
-
-  databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
-
-  projectId: "shoudinpixelwar",
-
-  storageBucket: "shoudinpixelwar.firebasestorage.app",
-
-  messagingSenderId: "896929635521",
-
-  appId: "1:896929635521:web:357f7b8a29cb5045684840",
-
-  measurementId: "G-FR7NC03RCY"
-
-};
+    apiKey: "AIzaSyBCy1NFYox9035-xdx52cale0gzLa5am4I",
+    authDomain: "shoudinpixelwar.firebaseapp.com",
+    databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "shoudinpixelwar",
+    storageBucket: "shoudinpixelwar.firebasestorage.app",
+    messagingSenderId: "896929635521",
+    appId: "1:896929635521:web:357f7b8a29cb5045684840",
+    measurementId: "G-FR7NC03RCY"
+  };
 
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
@@ -466,7 +457,7 @@
       const dist = pointersDistance();
       if (dist > 0 && pinchStartDist > 0){
         const factor = dist / pinchStartDist;
-        a = 1; const eased = Math.pow(factor, 0.85);
+        const eased = Math.pow(factor, 0.85);
         const newZoom = clampZoom(pinchStartZoom * eased);
         setZoomCentered(newZoom);
         e.preventDefault();
@@ -508,13 +499,12 @@
   // Pseudo UI
   const pseudoBtn    = document.getElementById('pseudoBtn');
 
-  // === Nouvelle modale menu ===
+  // === Modales menu & pseudo
   const pseudoMenuModal = document.getElementById('pseudoMenuModal');
   const menuChangePseudo = document.getElementById('menuChangePseudo');
   const menuOpenAdmin = document.getElementById('menuOpenAdmin');
   const menuClose = document.getElementById('menuClose');
 
-  // Modale pseudo (existante)
   const pseudoModal  = document.getElementById('pseudoModal');
   const pseudoInput  = document.getElementById('pseudoInput');
   const pseudoSave   = document.getElementById('pseudoSave');
@@ -526,24 +516,24 @@
     pseudoBtn.textContent = myName ? myName : 'Pseudo';
   }
 
-  // Menu: open/close
+  // ===== Menu: open/close
   function openPseudoMenu(){
     pseudoMenuModal.hidden = false;
   }
   function closePseudoMenu(){
     pseudoMenuModal.hidden = true;
   }
-  // Actions du menu
   menuChangePseudo.addEventListener('click', ()=>{ closePseudoMenu(); openPseudoModal(); });
   menuOpenAdmin.addEventListener('click', ()=>{ window.open('admin.html', '_blank'); });
   menuClose.addEventListener('click', closePseudoMenu);
+  // Le menu peut se fermer en cliquant sur le fond
   pseudoMenuModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoMenu);
 
-  // Modale Pseudo: open/close (ancienne logique conservée)
+  // ===== Modale Pseudo: open/close
   function openPseudoModal(){
     pseudoError.textContent = '';
     pseudoInput.value = myName || '';
-    // Si aucun pseudo => on cache "Annuler"
+    // Si aucun pseudo => on cache "Annuler" et on bloque la fermeture par fond
     if (!myName) {
       pseudoCancel.style.display = 'none';
     } else {
@@ -553,10 +543,19 @@
     setTimeout(()=> pseudoInput.focus(), 0);
   }
   function closePseudoModal(){ pseudoModal.hidden = true; }
-  // ⚠️ On remplace l'ancienne action du bouton Pseudo: il ouvre désormais le MENU
+
+  // Bouton titre ouvre le MENU (pas la modale pseudo directement)
   pseudoBtn.addEventListener('click', openPseudoMenu);
-  pseudoCancel.addEventListener('click', closePseudoModal);
-  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', closePseudoModal);
+
+  // Annuler : on NE ferme que si un pseudo existe déjà
+  pseudoCancel.addEventListener('click', ()=>{
+    if (myName) closePseudoModal();
+  });
+  // Clic sur le fond : on NE ferme que si un pseudo existe déjà
+  pseudoModal.querySelector('.modal-backdrop').addEventListener('click', ()=>{
+    if (myName) closePseudoModal();
+  });
+  // Enter pour valider
   pseudoInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') savePseudo(); });
 
   function normalizeName(s){ return s.trim(); }
@@ -706,8 +705,8 @@
       const n = s.val();
       myName = (typeof n === 'string' && n) ? n : null;
       if (myName) namesByUid[CURRENT_UID] = myName;
-      updatePseudoBtn(); // reflète le pseudo sur le bouton
-      // Auto-popup si aucun pseudo défini (on ouvre DIRECT la modale pseudo, pas le menu)
+      updatePseudoBtn();
+      // Auto-popup si aucun pseudo : ouverture obligatoire
       if (!myName) openPseudoModal();
     });
 
@@ -787,8 +786,9 @@
       }
     });
 
-    // Pose de pixel (avec auteur + ts + historique)
+    // Pose de pixel — BLOQUÉ si pas de pseudo
     canvas.addEventListener('click', async (e)=>{
+      if (!myName) { openPseudoModal(); return; } // <-- blocage sans pseudo
       const rect = canvas.getBoundingClientRect();
       const localX = (e.clientX - rect.left) / zoom;
       const localY = (e.clientY - rect.top)  / zoom;
@@ -828,7 +828,7 @@
   // Layout + init
   function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
-  updatePseudoBtn(); // initialise le texte du bouton au démarrage
+  updatePseudoBtn();
 
   // Recalcule quand la “visual viewport” change (Android : barre URL qui apparait/disparait)
   if (window.visualViewport){
@@ -848,7 +848,6 @@
   document.getElementById('countdown').textContent = 'Pause';
 
   // ==== Heartbeat fréquentation (alimente stats/onlineByHour) ====
-  // 1 tick toutes les 5 min par onglet visible pour l'heure en cours.
   (function setupOnlineByHourHeartbeat(){
     const PING_EVERY_MS = 5 * 60 * 1000; // 5 minutes
     const KEY_PREFIX = 'pw-traffic-last-'; // sessionStorage
@@ -872,7 +871,7 @@
       db.ref(`stats/onlineByHour/${dayKey}/${hour}`).transaction(cur => (cur || 0) + 1).catch(()=>{});
     }
 
-    setTimeout(ping, 5000); // premier tick après le load
+    setTimeout(ping, 5000);
     let timer = null;
     function start(){ if (timer) return; timer = setInterval(()=>{ if (document.visibilityState === 'visible') ping(); }, PING_EVERY_MS); }
     function stop(){ if (timer){ clearInterval(timer); timer=null; } }
@@ -886,5 +885,3 @@
   </script>
 </body>
 </html>
-
-
