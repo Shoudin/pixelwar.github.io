@@ -815,11 +815,18 @@ let _mmQueued = false;
 let _mmClientX = 0, _mmClientY = 0;
 let _tipW = 0, _tipH = 0; // cache dimensions du tip
 
+let _lastHoverX = -9999, _lastHoverY = -9999;
+
 function rafHoverUpdate(){
   _mmQueued = false;
 
+  // 0) Garde anti-jitter
+  if (_mmClientX === _lastHoverX && _mmClientY === _lastHoverY) return;
+  _lastHoverX = _mmClientX; _lastHoverY = _mmClientY;
+
   // 1) Convertir en coords grille avec rect “frais”
   const rect = _canvasRect || canvas.getBoundingClientRect(); // fallback au 1er tour
+
   const localX = (_mmClientX - rect.left) / zoom;
   const localY = (_mmClientY - rect.top)  / zoom;
   const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
@@ -1182,10 +1189,16 @@ setInterval(()=>{ if (document.visibilityState === 'visible') tryArchive(); }, 1
   buildPalette(); updateCursor();
   updatePseudoBtn();
 
- if (window.visualViewport){
+if (window.visualViewport){
   visualViewport.addEventListener('resize', scheduleRelayout, { passive: true });
-  visualViewport.addEventListener('scroll',  scheduleRelayout, { passive: true });
+  let vvScrollRAF = false;
+  visualViewport.addEventListener('scroll', ()=>{
+    if (vvScrollRAF) return;
+    vvScrollRAF = true;
+    requestAnimationFrame(()=>{ vvScrollRAF = false; scheduleRelayout(); });
+  }, { passive: true });
 }
+
   // --- Handlers +/− palette
   if (palSizeMinus) palSizeMinus.addEventListener('click', ()=>{
     palScaleIdx = clampIndex(palScaleIdx - 1);
@@ -1279,9 +1292,12 @@ window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
 window.addEventListener('resize', scheduleRelayout);
 window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
+let roQueued = false;
 const ro = new ResizeObserver(()=>{
-  if (isLayingOut) return; // ← évite la boucle pendant le layout
-  scheduleRelayout();
+  if (isLayingOut) return;       // pas de rebond pendant le layout
+  if (roQueued) return;          // coalescé une fois par frame
+  roQueued = true;
+  requestAnimationFrame(()=>{ roQueued = false; scheduleRelayout(); });
 });
 ro.observe(paletteBar);
 ro.observe(uiBar);
@@ -1366,6 +1382,7 @@ ro.observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
