@@ -853,6 +853,34 @@ canvas.addEventListener('pointerleave', ()=>{
   const infoConnectedRef = db.ref('.info/connected');
   const presenceRootRef  = db.ref('presence');
   const clicksRef        = db.ref('stats/clicksTotal');
+// Buffer local pour les clics (évite les transactions à chaque pose)
+let _clicksBuffer = 0;
+let _clicksFlushTimer = null;
+
+function flushClicks(){
+  if (_clicksBuffer <= 0) return;
+  const n = _clicksBuffer;
+  _clicksBuffer = 0;
+  // Incrément atomique côté RTDB (compatible compat SDK)
+  clicksRef.set(firebase.database.ServerValue.increment(n)).catch(()=>{
+    // En cas d’erreur réseau, on remet dans le buffer
+    _clicksBuffer += n;
+  });
+}
+
+function scheduleClicksFlush(){
+  if (_clicksFlushTimer) return;
+  _clicksFlushTimer = setTimeout(()=>{
+    _clicksFlushTimer = null;
+    flushClicks();
+  }, 1500); // flush 1,5s après la dernière pose
+}
+
+// Flush quand on quitte/masque l’onglet
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'hidden') flushClicks();
+});
+window.addEventListener('pagehide', flushClicks);
 
   let CURRENT_UID = null;
 
@@ -1025,7 +1053,7 @@ pixelsRef.on('child_changed', snap => {
         };
         await db.ref(`pixels/${key}`).set(payload);
         await db.ref(`history/${key}`).push(payload);
-        await clicksRef.transaction(cur => (cur||0) + 1);
+       _clicksBuffer++; scheduleClicksFlush();
       } catch (err) {
         console.error('write pixel / click count error', err);
       }
@@ -1069,7 +1097,7 @@ viewport.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 
-    setInterval(tryArchive, 10*1000);
+setInterval(()=>{ if (document.visibilityState === 'visible') tryArchive(); }, 10*1000);
   });
 
   buildPalette(); updateCursor();
@@ -1168,6 +1196,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
