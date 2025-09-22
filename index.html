@@ -157,12 +157,13 @@
       <button id="trackerToggle" title="Activer/Désactiver le menu flottant Trackeur">Trackeur</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
-      <div class="sizeControls" aria-label="Taille menu">
-      <button id="uiSizeMinus" title="Menu plus petit">−</button>
-      <button id="uiSizePlus"  title="Menu plus grand">+</button>
-    </div>
       <input type="checkbox" id="showGridChk"> Grille
     </label>
+    <div class="sizeControls" aria-label="Taille menu">
+  <button id="uiSizeMinus" title="Menu plus petit">−</button>
+  <button id="uiSizePlus"  title="Menu plus grand">+</button>
+</div>
+
   </div>
 
   <div id="viewport">
@@ -333,22 +334,32 @@ function measureCanvasRect(){
   const uiRect  = uiBar.getBoundingClientRect();
   const palRect = paletteBar.getBoundingClientRect();
 
+  // lire les scales courants (défaut 1)
   const rootCS  = getComputedStyle(document.documentElement);
-  const safeBtm = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
+  const uiScale  = parseFloat(rootCS.getPropertyValue('--ui-scale'))  || 1;
+  const palScale = parseFloat(rootCS.getPropertyValue('--pal-scale')) || 1;
+  const safeBtm  = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
 
-  // 👉 Au lieu de (screenH - palRect.top), on prend simplement la hauteur vraie de la palette
-  //    + 8px d’espace + safe area. C’est stable desktop ET mobile.
-  let bottomSpace = Math.round(palRect.height + 8 + safeBtm);
+  // Hauteurs "réelles" (sans transform) = hauteur mesurée / scale
+  const uiHeightUnscaled  = uiRect.height  / uiScale;
+  const palHeightUnscaled = palRect.height / palScale;
 
-  // Fallback si, au tout premier layout, la palette n’est pas encore mesurée
+  // Position top du viewport : bas de la barre UI "réelle" + marge
+  const uiTop = Math.round(uiRect.top + uiHeightUnscaled);
+  viewport.style.top = (uiTop + 8) + 'px';
+
+  // Espace bas = hauteur réelle de la palette + espace + safe area
+  let bottomSpace = Math.round(palHeightUnscaled + 8 + safeBtm);
+
+  // Fallback si première mesure foire (au tout premier layout)
   if (!Number.isFinite(bottomSpace) || bottomSpace <= 0){
     const barHVar = parseFloat(rootCS.getPropertyValue('--bar-h')) || 92;
     bottomSpace = Math.round(barHVar + 8 + safeBtm);
   }
 
-  viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
   viewport.style.bottom = bottomSpace + 'px';
 }
+
 
 
   // === Grilles mémoire ===
@@ -1328,4 +1339,5 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
