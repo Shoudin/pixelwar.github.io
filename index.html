@@ -946,31 +946,63 @@ canvas.addEventListener('pointerleave', ()=>{
       overlayQueued = true;
       requestAnimationFrame(()=>{ drawGridOverlay(); overlayQueued = false; });
     }
+// --- Batch paint pour les updates temps réel (1 draw par frame) ---
+const paintQueue = new Map(); // key "x_y" -> {x,y}
+let paintRaf = false;
 
-    pixelsRef.on('child_added', snap => {
-      const [x,y] = snap.key.split('_').map(Number);
-      const v = snap.val() || {};
-      const col = Number.isFinite(+v.color) ? +v.color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) {
-        grid[y][x] = col;
-        authorGrid[y][x] = v.author || null;
-        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-        if (v.author) ensureName(v.author);
-        drawCell(x,y); queueOverlay();
-      }
-    });
-    pixelsRef.on('child_changed', snap => {
-      const [x,y] = snap.key.split('_').map(Number);
-      const v = snap.val() || {};
-      const col = Number.isFinite(+v.color) ? +v.color : 1;
-      if (x>=0 && x<W && y>=0 && y<H) {
-        grid[y][x] = col;
-        authorGrid[y][x] = v.author || null;
-        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-        if (v.author) ensureName(v.author);
-        drawCell(x,y); queueOverlay();
-      }
-    });
+function schedulePixelPaint(){
+  if (paintRaf) return;
+  paintRaf = true;
+  requestAnimationFrame(()=>{
+    paintRaf = false;
+
+    // Dessine toutes les cellules uniques en file
+    for (const {x, y} of paintQueue.values()){
+      drawCell(x, y);
+    }
+    paintQueue.clear();
+
+    // Grille (une seule fois après le batch)
+    if (showGridChk.checked) drawGridOverlay();
+  });
+}
+
+function enqueueCell(x, y){
+  // Set écrase les doublons "x_y" si plusieurs updates arrivent pour la même case
+  paintQueue.set(`${x}_${y}`, { x, y });
+  schedulePixelPaint();
+}
+
+   pixelsRef.on('child_added', snap => {
+  const [x,y] = snap.key.split('_').map(Number);
+  const v = snap.val() || {};
+  const col = Number.isFinite(+v.color) ? +v.color : 1;
+  if (x>=0 && x<W && y>=0 && y<H) {
+    grid[y][x] = col;
+    authorGrid[y][x] = v.author || null;
+    tsGrid[y][x] = (typeof v.ts === 'number') ? v.ts : null;
+    if (v.author) ensureName(v.author);
+
+    //  ne dessine pas tout de suite : on met en file
+    enqueueCell(x, y);
+  }
+});
+
+pixelsRef.on('child_changed', snap => {
+  const [x,y] = snap.key.split('_').map(Number);
+  const v = snap.val() || {};
+  const col = Number.isFinite(+v.color) ? +v.color : 1;
+  if (x>=0 && x<W && y>=0 && y<H) {
+    grid[y][x] = col;
+    authorGrid[y][x] = v.author || null;
+    tsGrid[y][x] = (typeof v.ts === 'number') ? v.ts : null;
+    if (v.author) ensureName(v.author);
+
+    //  batch aussi les changements
+    enqueueCell(x, y);
+  }
+});
+
 
     canvas.addEventListener('click', async (e)=>{
       if (!myName) { openPseudoModal(); return; }
@@ -1131,6 +1163,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
