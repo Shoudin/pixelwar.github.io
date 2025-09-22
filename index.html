@@ -328,30 +328,23 @@ function measureCanvasRect(){
   applyPalScale();
   applyUiScale();
 
-
   // === Layout : viewport borné entre le header et la palette ===
- function layoutViewport(){
-  const uiRect  = uiBar.getBoundingClientRect();
-  const palRect = paletteBar.getBoundingClientRect();
+function layoutViewport(){
+  // Mesures PLEIN ÉCRAN (déjà “scalées” par le transform)
+  const uiBottom = uiBar.getBoundingClientRect().bottom;
+  const palTop   = paletteBar.getBoundingClientRect().top;
 
-  // lire les scales courants (défaut 1)
   const rootCS  = getComputedStyle(document.documentElement);
-  const uiScale  = parseFloat(rootCS.getPropertyValue('--ui-scale'))  || 1;
-  const palScale = parseFloat(rootCS.getPropertyValue('--pal-scale')) || 1;
-  const safeBtm  = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
+  const safeBtm = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
 
-  // Hauteurs "réelles" (sans transform) = hauteur mesurée / scale
-  const uiHeightUnscaled  = uiRect.height  / uiScale;
-  const palHeightUnscaled = palRect.height / palScale;
+  // Le viewport commence juste sous la barre UI
+  viewport.style.top = Math.round(uiBottom + 8) + 'px';
 
-  // Position top du viewport : bas de la barre UI "réelle" + marge
-  const uiTop = Math.round(uiRect.top + uiHeightUnscaled);
-  viewport.style.top = (uiTop + 8) + 'px';
+  // Espace bas = distance entre le haut de la palette et le bas d’écran
+  // + marge + safe area
+  let bottomSpace = Math.round(Math.max(0, window.innerHeight - palTop) + 8 + safeBtm);
 
-  // Espace bas = hauteur réelle de la palette + espace + safe area
-  let bottomSpace = Math.round(palHeightUnscaled + 8 + safeBtm);
-
-  // Fallback si première mesure foire (au tout premier layout)
+  // Fallback si la palette n’est pas encore mesurée au tout 1er layout
   if (!Number.isFinite(bottomSpace) || bottomSpace <= 0){
     const barHVar = parseFloat(rootCS.getPropertyValue('--bar-h')) || 92;
     bottomSpace = Math.round(barHVar + 8 + safeBtm);
@@ -359,9 +352,6 @@ function measureCanvasRect(){
 
   viewport.style.bottom = bottomSpace + 'px';
 }
-
-
-
   // === Grilles mémoire ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
   const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null));
@@ -1339,5 +1329,6 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
