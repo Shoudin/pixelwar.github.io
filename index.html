@@ -96,6 +96,7 @@
       transform: translate(-50%, -120%);
       display: none;
       white-space: nowrap;
+      will-change: left, top, transform;
     }
     #trackerTip .xy{ font-weight: 600; margin-right: 6px; }
     #trackerTip .meta{ opacity: .8; }
@@ -232,7 +233,12 @@
   canvas.width  = W * PIX;
   canvas.height = H * PIX;
   const ctx = canvas.getContext('2d');
-
+// Rect du canvas mis à jour intelligemment (évite les mesures à chaque mousemove)
+let _canvasRect = null;
+function measureCanvasRect(){
+  // Mesure “fraîche” après un frame de rendu
+  _canvasRect = canvas.getBoundingClientRect();
+}
   // === Palette ===
   const colors = [
     '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
@@ -476,6 +482,7 @@ function scheduleRelayout(){
     layoutViewport();
     updateSizer();
     clampScroll();
+    measureCanvasRect();
   });
 }
 
@@ -486,6 +493,7 @@ function scheduleRelayout(){
     stageWrap.style.transform = `scale(${zoom})`;
     zLevelEl.textContent = `${Math.round(zoom*100)}%`;
     updateSizer();
+  requestAnimationFrame(measureCanvasRect);
   }
   function setZoomCentered(newZoom){
     const vp = viewport;
@@ -724,15 +732,80 @@ function zoomOut(){
     }
   }
 
-  canvas.addEventListener('mousemove', (e)=>{
-    const {x,y} = screenToGrid(e.clientX, e.clientY);
-    coordsEl.textContent = (x>=0 && x<W && y>=0 && y<H) ? `(${x}, ${y})` : '—';
-    updateTracker(e);
-  });
-  canvas.addEventListener('pointermove', (e)=>{
-    if (e.pointerType === 'touch') updateTracker(e);
-  });
-  canvas.addEventListener('pointerleave', ()=>{ trackerTip.style.display='none'; });
+ // --- Tracker & coords : coalescé à la frame ---
+let _mmQueued = false;
+let _mmClientX = 0, _mmClientY = 0;
+let _tipW = 0, _tipH = 0; // cache dimensions du tip
+
+function rafHoverUpdate(){
+  _mmQueued = false;
+
+  // 1) Convertir en coords grille avec rect “frais”
+  const rect = _canvasRect || canvas.getBoundingClientRect(); // fallback au 1er tour
+  const localX = (_mmClientX - rect.left) / zoom;
+  const localY = (_mmClientY - rect.top)  / zoom;
+  const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
+
+  // 2) Coords HUD
+  if (x>=0 && x<W && y>=0 && y<H){
+    coordsEl.textContent = `(${x}, ${y})`;
+  } else {
+    coordsEl.textContent = '—';
+  }
+
+  // 3) Tracker tip (si activé)
+  if (!trackerOn) { trackerTip.style.display = 'none'; return; }
+
+  if (x>=0 && x<W && y>=0 && y<H){
+    const uid = authorGrid[y][x];
+    const display = uid ? (namesByUid[uid] || uidShort(uid)) : '—';
+    const when = tsGrid[y][x];
+    const ago = when ? `, ${timeAgoFR(when)}` : '';
+
+    trackerXY.textContent = `(${x}, ${y})`;
+    trackerMeta.textContent = `${display}${ago}`;
+
+    // Afficher si caché et mesurer 1x
+    if (trackerTip.style.display !== 'block'){
+      trackerTip.style.display = 'block';
+      // première mesure (1x) – coût négligeable car coalescé
+      const r = trackerTip.getBoundingClientRect();
+      _tipW = r.width; _tipH = r.height;
+    }
+
+    // 4) Positionner sans dépasser l'écran (utilise le cache largeur/hauteur)
+    const offsetX = 14, offsetY = 18;
+    let tx = _mmClientX + offsetX;
+    let ty = _mmClientY - offsetY;
+
+    if (tx + _tipW > window.innerWidth - 6) tx = window.innerWidth - _tipW - 6;
+    if (ty - _tipH < 6) ty = _mmClientY + offsetY;
+
+    trackerTip.style.left = tx + 'px';
+    trackerTip.style.top  = ty + 'px';
+  } else {
+    trackerTip.style.display = 'none';
+  }
+}
+
+// Souris
+canvas.addEventListener('mousemove', (e)=>{
+  _mmClientX = e.clientX; _mmClientY = e.clientY;
+  if (!_mmQueued){ _mmQueued = true; requestAnimationFrame(rafHoverUpdate); }
+});
+
+// Tactile (doigt) sur le canvas
+canvas.addEventListener('pointermove', (e)=>{
+  if (e.pointerType !== 'touch') return;
+  _mmClientX = e.clientX; _mmClientY = e.clientY;
+  if (!_mmQueued){ _mmQueued = true; requestAnimationFrame(rafHoverUpdate); }
+}, { passive:true });
+
+canvas.addEventListener('pointerleave', ()=>{
+  trackerTip.style.display = 'none';
+  coordsEl.textContent = '—';
+});
+
 
   function formatParisFilename(prefix="snapshot", ext="png"){
     const fmt = new Intl.DateTimeFormat('fr-FR',{ timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
@@ -1058,6 +1131,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
