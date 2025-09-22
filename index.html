@@ -362,28 +362,72 @@
       paletteGrid.appendChild(sw);
     });
   }
-  function layoutPaletteTwoRows(){
-    const total = colors.length, cols = Math.ceil(total/2);
-    const bar = paletteBar, btns = bar.querySelector('.dockZoom');
-    const barRect = bar.getBoundingClientRect(), btnRect = btns.getBoundingClientRect();
-    const pad = 2*parseFloat(getComputedStyle(bar).paddingLeft);
-    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
-    const available = Math.max(120, barRect.width - btnRect.width - 10 - pad);
-    const sw = Math.floor((available - gap*(cols-1)) / cols);
-    const minSw = 18, maxSw = IS_MOBILE ? 28 : 32;
-    const clamped = Math.max(minSw, Math.min(maxSw, sw));
-    bar.style.setProperty('--cols', cols);
+ // Cache de dernière mise en page pour court-circuiter les no-op
+let _pal_lastW = -1, _pal_lastCols = -1, _pal_lastSW = -1, _pal_lastBarH = -1;
+
+function layoutPaletteTwoRows(){
+  const total = colors.length;
+  const cols = Math.ceil(total / 2);
+
+  const bar  = paletteBar;
+  const btns = bar.querySelector('.dockZoom');
+
+  // Mesures légères (évite getBoundingClientRect pour la largeur globale)
+  // clientWidth = contenu + padding (sans bordure), ça suffit ici.
+  const barW  = bar.clientWidth;
+  const btnW  = btns ? btns.offsetWidth : 0;
+
+  // Court-circuit si la largeur n'a quasi pas bougé ET mêmes colonnes
+  // (±1px = bruit ; évite les re-écritures)
+  if (Math.abs(barW - _pal_lastW) < 1 && cols === _pal_lastCols) return;
+
+  // Une seule lecture de styles calculés par élément
+  const rootCS = getComputedStyle(document.documentElement);
+  const barCS  = getComputedStyle(bar);
+
+  const padX = parseFloat(barCS.paddingLeft) + parseFloat(barCS.paddingRight);
+  const padY = parseFloat(barCS.paddingTop)  + parseFloat(barCS.paddingBottom);
+
+  const gap = parseFloat(rootCS.getPropertyValue('--gap')) || 8;
+
+  // Largeur dispo pour la grille (évite la magie du 10 : garde un petit espace)
+  const available = Math.max(120, barW - btnW - 10 - padX);
+
+  // Taille de swatch
+  const sw = Math.floor((available - gap * (cols - 1)) / cols);
+  const minSw = 18, maxSw = IS_MOBILE ? 28 : 32;
+  const clamped = Math.max(minSw, Math.min(maxSw, sw));
+
+  // Hauteur totale du bandeau (2 lignes + 1 gap + padding vertical)
+  const barH = Math.ceil((clamped * 2) + gap + padY);
+
+  // Écritures conditionnelles (évite les styles identiques → pas d’invalidation)
+  if (cols !== _pal_lastCols) {
+    bar.style.setProperty('--cols', String(cols));
+    _pal_lastCols = cols;
+  }
+  if (clamped !== _pal_lastSW) {
     bar.style.setProperty('--sw', clamped + 'px');
-    const barPad = parseFloat(getComputedStyle(bar).paddingTop) + parseFloat(getComputedStyle(bar).paddingBottom);
-    const barH = (clamped*2) + gap + barPad;
-    document.documentElement.style.setProperty('--bar-h', Math.ceil(barH) + 'px');
+    _pal_lastSW = clamped;
+  }
+  if (barH !== _pal_lastBarH) {
+    document.documentElement.style.setProperty('--bar-h', barH + 'px');
+    _pal_lastBarH = barH;
   }
 
-  function updateSizer(){
-    const scaledW = W * PIX * zoom, scaledH = H * PIX * zoom;
-    sizer.style.width  = Math.ceil(scaledW) + 'px';
-    sizer.style.height = Math.ceil(scaledH) + 'px';
-  }
+  // Mémoriser la largeur
+  _pal_lastW = barW;
+}
+
+
+let _sizer_w = -1, _sizer_h = -1;
+function updateSizer(){
+  const scaledW = Math.ceil(W * PIX * zoom);
+  const scaledH = Math.ceil(H * PIX * zoom);
+  if (scaledW !== _sizer_w) { sizer.style.width  = scaledW + 'px'; _sizer_w = scaledW; }
+  if (scaledH !== _sizer_h) { sizer.style.height = scaledH + 'px'; _sizer_h = scaledH; }
+}
+
   function clampScroll(){
     const maxLeft = Math.max(0, sizer.offsetWidth  - viewport.clientWidth );
     const maxTop  = Math.max(0, sizer.offsetHeight - viewport.clientHeight);
@@ -911,6 +955,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
