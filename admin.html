@@ -839,20 +839,6 @@ function drawLineChart(series, hasData){
     }catch(e){ console.error(e); alert('Erreur pendant le bannissement.'); }
   }
 
-  // ---------- Leaderboard & chart init ----------
-      renderLeaderboard();
-      var ref=db.ref('pixels');
-      ref.on('child_added', function(s){
-        var k=s.key; var v=s.val()||{}; var newUid=v.author||null;
-        if (typeof pixelOwners[k] === 'undefined'){ pixelOwners[k]=newUid; if(newUid) addCount(newUid); renderLeaderboard(); }
-      });
-      ref.on('child_changed', function(s){
-        var k=s.key; var v=s.val()||{}; var oldUid=pixelOwners[k]||null; var newUid=v.author||null;
-        if (oldUid!==newUid){ if(oldUid) subCount(oldUid); pixelOwners[k]=newUid; if(newUid) addCount(newUid); renderLeaderboard(); }
-      });
-    });
-  }
-
   // ---------- Init ----------
   loadBoardToPreview();
   initLeaderboard();
