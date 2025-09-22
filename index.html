@@ -468,8 +468,38 @@ function scheduleRelayout(){
     vp.scrollTop  = logicalCY * zoom - vp.clientHeight/2;
     clampScroll();
   }
-  function zoomIn(){  setZoomCentered(clampZoom(zoom * ZOOM_STEP)); }
-  function zoomOut(){ setZoomCentered(clampZoom(zoom / ZOOM_STEP)); }
+    // --- Zoom autour d'un point (coordonnées en pixels "client" dans le viewport) ---
+function setZoomAroundPoint(newZoom, pxClient, pyClient){
+  const vp = viewport;
+  const rect = vp.getBoundingClientRect();
+
+  // Coordonnées logiques du point visé avant le changement de zoom
+  const logicalX = (vp.scrollLeft + (pxClient - rect.left)) / zoom;
+  const logicalY = (vp.scrollTop  + (pyClient - rect.top )) / zoom;
+
+  zoom = clampZoom(newZoom);
+  applyZoom();
+
+  // Recalage du scroll pour que le point visé reste au même endroit à l’écran
+  vp.scrollLeft = logicalX * zoom - (pxClient - rect.left);
+  vp.scrollTop  = logicalY * zoom - (pyClient - rect.top);
+
+  clampScroll();
+}
+
+ function zoomIn(){
+  const rect = viewport.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top  + rect.height / 2;
+  setZoomAroundPoint(clampZoom(zoom * ZOOM_STEP), cx, cy);
+}
+function zoomOut(){
+  const rect = viewport.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top  + rect.height / 2;
+  setZoomAroundPoint(clampZoom(zoom / ZOOM_STEP), cx, cy);
+}
+
   document.getElementById('zIn').onclick = zoomIn;
   document.getElementById('zOut').onclick = zoomOut;
   document.getElementById('zReset').onclick = ()=>{ zoom = 1; applyZoom(); clampScroll(); };
@@ -492,20 +522,36 @@ function scheduleRelayout(){
       setTouchActionDuringPinch(true); e.preventDefault();
     }
   }, { passive:false });
-  viewport.addEventListener('pointermove', (e)=>{
-    if (!activePointers.has(e.pointerId)) return;
-    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinchInProgress && activePointers.size >= 2){
-      const dist = pointersDistance();
-      if (dist > 0 && pinchStartDist > 0){
-        const factor = dist / pinchStartDist;
-        const eased = Math.pow(factor, 0.85);
-        const newZoom = clampZoom(pinchStartZoom * eased);
-        setZoomCentered(newZoom);
-        e.preventDefault();
-      }
+ viewport.addEventListener('pointermove', (e)=>{
+  if (!activePointers.has(e.pointerId)) return;
+
+  // Mettre à jour la position du pointeur courant
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pinchInProgress && activePointers.size >= 2){
+    const dist = pointersDistance();
+    if (dist > 0 && pinchStartDist > 0){
+      // 1) Filtre anti-jitter : ignorer < ~2% de variation
+      const rawFactor = dist / pinchStartDist;
+      if (Math.abs(rawFactor - 1) < 0.02) { e.preventDefault(); return; }
+
+      // 2) Courbe douce pour un feeling naturel
+      const eased = Math.pow(rawFactor, 0.85);
+      const newZoom = clampZoom(pinchStartZoom * eased);
+
+      // 3) Centroïde des deux doigts (point autour duquel on zoome)
+      const arr = [...activePointers.values()];
+      const cx = (arr[0].x + arr[1].x) / 2;
+      const cy = (arr[0].y + arr[1].y) / 2;
+
+      // 4) Zoom en gardant le centroïde fixe à l’écran
+      setZoomAroundPoint(newZoom, cx, cy);
+
+      e.preventDefault(); // bloque le scroll pendant le pinch
     }
-  }, { passive:false });
+  }
+}, { passive:false });
+
   function endPointer(e){
     if (activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
     if (activePointers.size < 2 && pinchInProgress){
@@ -856,6 +902,21 @@ function scheduleRelayout(){
         updateCursor();
       }
     }, { passive: false });
+// --- Ctrl + molette : zoom autour du pointeur (façon Google Maps) ---
+viewport.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return;      // On ne zoome que si Ctrl est enfoncé
+  e.preventDefault();          // Bloque le scroll de la page/viewport pendant le zoom
+
+  // Sens de la molette -> facteur de zoom
+  const factor = (e.deltaY > 0) ? (1 / ZOOM_STEP) : ZOOM_STEP;
+
+  // Position écran du pointeur (en coordonnées "client")
+  const px = e.clientX;
+  const py = e.clientY;
+
+  // Zoom en gardant le point sous la souris au même endroit à l’écran
+  setZoomAroundPoint(clampZoom(zoom * factor), px, py);
+}, { passive: false });
 
     setInterval(tryArchive, 10*1000);
   });
@@ -955,6 +1016,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
