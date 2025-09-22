@@ -636,7 +636,7 @@
     drawLineChart(series, hasData);
   });
 }
- function drawLineChart(series, hasData){
+function drawLineChart(series, hasData){
   var Wc = chart.width, Hc = chart.height;
   chartCtx.clearRect(0,0,Wc,Hc);
   chartCtx.fillStyle = '#fff'; chartCtx.fillRect(0,0,Wc,Hc);
@@ -645,12 +645,66 @@
   var left=40, right=8, top=8, bottom=22;
   var plotW = Wc-left-right, plotH=Hc-top-bottom;
 
-  // max Y sur les valeurs non nulles
+  // max Y (≥1)
   var maxY = 1;
   for (var i=0;i<series.length;i++){
     var v = series[i];
     if (typeof v === 'number' && v > maxY) maxY = v;
   }
+
+  // Grille + labels
+  var steps=4;
+  chartCtx.fillStyle='#666'; chartCtx.font='12px system-ui';
+  for(var i=0;i<=steps;i++){
+    var y = top + plotH*(1 - i/steps);
+    chartCtx.beginPath(); chartCtx.moveTo(left,y); chartCtx.lineTo(left+plotW,y); chartCtx.stroke();
+    var val = Math.round(maxY * i/steps);
+    chartCtx.fillText(String(val), 6, y-2);
+  }
+
+  // Ticks heures (0,6,12,18,24)
+  for(var h=0; h<=24; h+=6){
+    var idx = Math.min(series.length-1, h*60);
+    var x = left + plotW*(idx/(series.length-1));
+    chartCtx.beginPath(); chartCtx.moveTo(x, top+plotH); chartCtx.lineTo(x, top+plotH+4); chartCtx.stroke();
+    chartCtx.fillText(String(h)+'h', x-8, top+plotH+16);
+  }
+
+  var chartNoData = document.getElementById('chartNoData');
+  if (!hasData){ chartNoData.style.display='flex'; return; } else { chartNoData.style.display='none'; }
+
+  // Tracé segmenté (ne relie pas à travers les trous)
+  chartCtx.beginPath();
+  chartCtx.strokeStyle='#111'; chartCtx.lineWidth=2;
+  var inSeg = false;
+  for(var k=0;k<series.length;k++){
+    var v = series[k];
+    var x = left + plotW*(k/(series.length-1));
+    if (typeof v === 'number'){
+      var y = top + plotH*(1 - (v/maxY));
+      if (!inSeg){ chartCtx.moveTo(x,y); inSeg = true; } else { chartCtx.lineTo(x,y); }
+    } else {
+      inSeg = false;
+    }
+  }
+  chartCtx.stroke();
+
+  // **Points** pour chaque minute mesurée (visible même si isolée)
+  chartCtx.fillStyle = '#111';
+  var r = 2.5;
+  for(var k=0;k<series.length;k++){
+    var v = series[k];
+    if (typeof v === 'number'){
+      var x = left + plotW*(k/(series.length-1));
+      var y = top + plotH*(1 - (v/maxY));
+      chartCtx.beginPath();
+      chartCtx.arc(x, y, r, 0, Math.PI*2);
+      chartCtx.fill();
+    }
+  }
+}
+
+
 
   // Grille horizontale + labels Y
   var steps=4;
