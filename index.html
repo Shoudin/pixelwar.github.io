@@ -547,19 +547,21 @@ function updateSizer(){
   }
     // ---- Scheduler de relayout (regroupe tout dans une seule rAF) ----
   var layoutScheduled = false;
+    var isLayingOut = false; 
     function scheduleRelayout(){
   if (layoutScheduled) return;
   layoutScheduled = true;
   requestAnimationFrame(()=>{
     layoutScheduled = false;
+    isLayingOut = true; // ← on pose le verrou
     layoutPaletteTwoRows();
     layoutViewport();
     updateSizer();
     clampScroll();
     measureCanvasRect();
+    isLayingOut = false; // ← on libère le verrou
   });
 }
-
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
   function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
@@ -1277,8 +1279,12 @@ window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
 window.addEventListener('resize', scheduleRelayout);
 window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
- new ResizeObserver(()=>{ scheduleRelayout(); }).observe(paletteBar);
-new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
+const ro = new ResizeObserver(()=>{
+  if (isLayingOut) return; // ← évite la boucle pendant le layout
+  scheduleRelayout();
+});
+ro.observe(paletteBar);
+ro.observe(uiBar);
 
   document.getElementById('countdown').textContent = 'Pause';
 
@@ -1360,6 +1366,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
