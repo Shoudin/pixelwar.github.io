@@ -648,24 +648,7 @@
     if (!user) return;
     CURRENT_UID = user.uid;
 
-    /* ========= AJOUT : journaliser 1 connexion serveur par onglet ========= */
-    (function logVisitOncePerTab(){
-      const key = 'pw-visit-logged';
-      if (sessionStorage.getItem(key)) return; // déjà compté pour cet onglet
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth()+1).padStart(2,'0');
-      const d = String(now.getDate()).padStart(2,'0');
-      const hh = String(now.getHours()).padStart(2,'0');
-      const mm = String(now.getMinutes()).padStart(2,'0');
-      const dayKey = `${y}-${m}-${d}`;
-      const minKey = `${hh}:${mm}`;
-      db.ref(`stats/visitsByMinute/${dayKey}/${minKey}`)
-        .transaction(cur => (cur || 0) + 1)
-        .catch(()=>{})
-        .finally(()=>{ sessionStorage.setItem(key, '1'); });
-    })();
-    /* ======== fin AJOUT ======== */
+
 
     db.ref(`users/${CURRENT_UID}/name`).on('value', s=>{
       const n = s.val();
@@ -837,6 +820,48 @@
 
     start();
   })();
+// === Connexions par minute (visitsByMinute) ===
+// Incrémente 1 fois par minute quand l’onglet est visible.
+// Chemin : stats/visitsByMinute/YYYY-MM-DD/HH:mm
+(function setupVisitsByMinute(){
+  const dbRoot = firebase.database().ref();
+  const PING_EVERY_MS = 60 * 1000; // 1 minute
+
+  function dateKey(d){
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const dd=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+  function minuteKey(d){
+    const hh=String(d.getHours()).padStart(2,'0');
+    const mm=String(d.getMinutes()).padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+
+  let timer = null;
+  let lastMinuteStamp = '';
+
+  function pingOnceForCurrentMinute(){
+    if (document.visibilityState !== 'visible') return;
+    const now = new Date();
+    const day = dateKey(now);
+    const min = minuteKey(now);
+    const stamp = `${day} ${min}`;
+    if (stamp === lastMinuteStamp) return; // dédup par minute
+    lastMinuteStamp = stamp;
+    dbRoot.child(`stats/visitsByMinute/${day}/${min}`)
+      .transaction(cur => (cur || 0) + 1)
+      .catch(()=>{ /* ignore */ });
+  }
+
+  function start(){ if (timer) return; pingOnceForCurrentMinute(); timer = setInterval(pingOnceForCurrentMinute, PING_EVERY_MS); }
+  function stop(){ if (!timer) return; clearInterval(timer); timer = null; }
+
+  document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') start(); else stop(); });
+  start();
+})();
   </script>
 </body>
 </html>
+
