@@ -555,19 +555,21 @@ var _ro = null; // ref du ResizeObserver pour (dé)brancher pendant le layout
   layoutScheduled = true;
   requestAnimationFrame(()=>{
     layoutScheduled = false;
-    // Débrancher le RO pour éviter toute notif durant le layout
-    if (_ro) _ro.disconnect();
     isLayingOut = true; // ← on pose le verrou
-    layoutPaletteTwoRows();
-    layoutViewport();
-    updateSizer();
-    clampScroll();
-    measureCanvasRect();
-    isLayingOut = false; // ← on libère le verrou
-    // Rebrancher le RO
-    if (_ro) { _ro.observe(paletteBar); _ro.observe(uiBar); }
+    try {
+      layoutPaletteTwoRows();
+      layoutViewport();
+      updateSizer();
+      clampScroll();
+      measureCanvasRect();
+    } catch (e) {
+      console.error('[scheduleRelayout] crash:', e);
+    } finally {
+      isLayingOut = false; // ← toujours relâché, même en cas d’erreur
+    }
   });
 }
+
 
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
@@ -1197,7 +1199,15 @@ setInterval(()=>{ if (document.visibilityState === 'visible') tryArchive(); }, 1
   updatePseudoBtn();
 
 if (window.visualViewport){
-  visualViewport.addEventListener('resize', scheduleRelayout, { passive: true });
+  // resize coalescé
+  let vvResizeRAF = false;
+  visualViewport.addEventListener('resize', ()=>{
+    if (vvResizeRAF) return;
+    vvResizeRAF = true;
+    requestAnimationFrame(()=>{ vvResizeRAF = false; scheduleRelayout(); });
+  }, { passive: true });
+
+  // scroll coalescé
   let vvScrollRAF = false;
   visualViewport.addEventListener('scroll', ()=>{
     if (vvScrollRAF) return;
@@ -1205,6 +1215,7 @@ if (window.visualViewport){
     requestAnimationFrame(()=>{ vvScrollRAF = false; scheduleRelayout(); });
   }, { passive: true });
 }
+
 
   // --- Handlers +/− palette
   if (palSizeMinus) palSizeMinus.addEventListener('click', ()=>{
@@ -1299,17 +1310,15 @@ window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
 window.addEventListener('resize', scheduleRelayout);
 window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
-let roQueued = false;
-let roQueued = false;
-_ro = new ResizeObserver(()=>{
-  if (isLayingOut) return;         // pas de rebond pendant le layout
-  if (roQueued) return;            // coalescé une fois par frame
+    let roQueued = false;
+const ro = new ResizeObserver(()=>{
+  if (isLayingOut) return;   // pas de rebond pendant le layout
+  if (roQueued) return;      // coalescé : 1 appel/frame
   roQueued = true;
   requestAnimationFrame(()=>{ roQueued = false; scheduleRelayout(); });
 });
-_ro.observe(paletteBar);
-_ro.observe(uiBar);
-
+ro.observe(paletteBar);
+ro.observe(uiBar);
 
   document.getElementById('countdown').textContent = 'Pause';
 
@@ -1391,6 +1400,7 @@ _ro.observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
