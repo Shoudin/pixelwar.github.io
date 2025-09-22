@@ -221,12 +221,23 @@
   </div>
 
   <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js" crossorigin="anonymous"></script>
 
   <script>
+    // ---- Diagnostics erreurs (affiche tout en console) ----
+window.addEventListener('error', (e) => {
+  console.error('[window.error]', {
+    message: e.message, filename: e.filename, lineno: e.lineno, colno: e.colno,
+    error: e.error && (e.error.stack || e.error)
+  });
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandledrejection]', e.reason && (e.reason.stack || e.reason));
+});
+
     // === Bandeau erreurs JS (pour voir tout crash au chargement) ===
 (function bootErrorBanner(){
   const bar = document.createElement('div');
@@ -1349,6 +1360,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
