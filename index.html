@@ -233,7 +233,7 @@
     authDomain: "shoudinpixelwar.firebaseapp.com",
     databaseURL: "https://shoudinpixelwar-default-rtdb.europe-west1.firebasedatabase.app",
     projectId: "shoudinpixelwar",
-    storageBucket: "shoudinpixelwar.firebasestorage.app",
+    storageBucket: "shoudinpixelwar.appspot.com",
     messagingSenderId: "896929635521",
     appId: "1:896929635521:web:357f7b8a29cb5045684840",
     measurementId: "G-FR7NC03RCY"
@@ -242,7 +242,12 @@
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db   = firebase.database();
-  const storage = firebase.storage();
+let storage = null;
+try {
+  storage = firebase.storage();
+} catch (e) {
+  console.warn('Firebase Storage non initialisé :', e);
+}
 
   // === Paramètres mosaïque ===
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -865,8 +870,11 @@ canvas.addEventListener('pointerleave', ()=>{
     return `${prefix}_${stamp}.${ext}`;
   }
   function canvasToBlobPNG(cnv){ return new Promise(res => cnv.toBlob(b => res(b), 'image/png')); }
-  async function uploadSnapshot(folder, filename){
-    await new Promise(r => requestAnimationFrame(r));
+async function uploadSnapshot(folder, filename){
+  if (!storage) {
+    console.warn('Upload ignoré : Storage indisponible');
+    return { path: null, url: null };
+  }    await new Promise(r => requestAnimationFrame(r));
     const blob = await canvasToBlobPNG(canvas);
     const path = `${folder}/${filename}`;
     const ref = storage.ref().child(path);
@@ -1329,6 +1337,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
