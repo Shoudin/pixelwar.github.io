@@ -278,16 +278,27 @@
   updateTrackerToggleUI();
 
   // === Layout : viewport borné entre le header et la palette ===
-  function layoutViewport(){
-    const uiRect  = uiBar.getBoundingClientRect();
-    const palRect = paletteBar.getBoundingClientRect();
-    const vv = window.visualViewport;
-    const screenH = vv ? vv.height : window.innerHeight;
-    const safeBtm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom'))||0;
-    const bottomSpace = Math.round((screenH - palRect.top) + 8 + safeBtm);
-    viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
-    viewport.style.bottom = bottomSpace + 'px';
+ function layoutViewport(){
+  const uiRect  = uiBar.getBoundingClientRect();
+  const palRect = paletteBar.getBoundingClientRect();
+
+  const rootCS  = getComputedStyle(document.documentElement);
+  const safeBtm = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
+
+  // 👉 Au lieu de (screenH - palRect.top), on prend simplement la hauteur vraie de la palette
+  //    + 8px d’espace + safe area. C’est stable desktop ET mobile.
+  let bottomSpace = Math.round(palRect.height + 8 + safeBtm);
+
+  // Fallback si, au tout premier layout, la palette n’est pas encore mesurée
+  if (!Number.isFinite(bottomSpace) || bottomSpace <= 0){
+    const barHVar = parseFloat(rootCS.getPropertyValue('--bar-h')) || 92;
+    bottomSpace = Math.round(barHVar + 8 + safeBtm);
   }
+
+  viewport.style.top    = Math.round(uiRect.bottom + 8) + 'px';
+  viewport.style.bottom = bottomSpace + 'px';
+}
+
 
   // === Grilles mémoire ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
@@ -1016,6 +1027,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
