@@ -7,6 +7,8 @@
   <title>Le Grand Gribidouillage</title>
   <style>
     :root{
+      --ui-scale: 1;
+      --pal-scale: 1;
       --bar-h: 92px;
       --bar-pad: 10px;
       --gap: 8px;
@@ -26,6 +28,9 @@
     body { font-family: system-ui, sans-serif; margin: 16px; padding-bottom: var(--safe-bottom); }
     h1 { margin: 0; font-size: 18px; }
     .titlebar{ display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap: wrap; }
+     .titlebar, #uiBar{
+      transform: scale(var(--ui-scale));
+      transform-origin: top left;}
     .ui { display:flex; gap:16px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     .dim { opacity:.7 }
 
@@ -57,16 +62,19 @@
     #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
     #paletteBar{
-      position: fixed; left: 50%; transform: translateX(-50%);
+      position: fixed; left: 50%;
+      transform: translateX(-50%) scale(var(--pal-scale));
+      transform-origin: bottom center;
       bottom: calc(8px + var(--safe-bottom));
       max-width: min(100vw - 16px, 1100px);
       padding: var(--bar-pad);
       border:1px solid #333; border-radius:14px; background:#fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
-      display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; z-index:10;
+      display:grid; grid-template-columns: 1fr auto auto; align-items:center; gap:10px; z-index:10;
       contain: content;
       will-change: contents;
     }
+
     #paletteGrid{
       display:grid; grid-auto-flow: row dense;
       grid-template-columns: repeat(var(--cols), var(--sw));
@@ -78,7 +86,8 @@
 
     .dockZoom{ display:flex; flex-direction:column; gap:6px; align-items:center; justify-content:center; }
     .dockZoom button{ width:36px; height:28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; font-size:16px; line-height:1; }
-
+    .sizeControls{ display:flex; gap:6px; align-items:center; justify-content:center; }
+    .sizeControls button{ width:36px; height:28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; font-size:16px; line-height:1; }
     .zoomControls{ display:flex; gap:8px; align-items:center; }
     .zoomControls button{ cursor:pointer; padding:6px 10px; border:1px solid #aaa; border-radius:8px; background:#fff; }
     .zoomControls .level{ min-width:48px; text-align:center; font-variant-numeric: tabular-nums; }
@@ -132,7 +141,7 @@
 <body>
   <div class="titlebar">
     <h1>Le Grand Gribidouillage</h1>
-    <button id="pseudoBtn" title="Choisir/Changer mon pseudo">Pseudo</button>
+    <button id="pseudoBtn" title="Options">Option</button>
   </div>
 
   <div class="ui" id="uiBar">
@@ -148,6 +157,10 @@
       <button id="trackerToggle" title="Activer/Désactiver le menu flottant Trackeur">Trackeur</button>
     </div>
     <label class="toggle" title="Afficher/masquer la grille">
+      <div class="sizeControls" aria-label="Taille menu">
+      <button id="uiSizeMinus" title="Menu plus petit">−</button>
+      <button id="uiSizePlus"  title="Menu plus grand">+</button>
+    </div>
       <input type="checkbox" id="showGridChk"> Grille
     </label>
   </div>
@@ -167,6 +180,10 @@
       <button id="dockZIn"  title="Zoom +">+</button>
       <button id="dockZOut" title="Zoom -">−</button>
     </div>
+       <div class="sizeControls" aria-label="Taille palette">
+      <button id="palSizeMinus" title="Palette plus petite">−</button>
+      <button id="palSizePlus"  title="Palette plus grande">+</button>
+    </div>
   </aside>
 
   <div id="trackerTip" role="status" aria-live="polite">
@@ -181,6 +198,7 @@
       <p class="hint">Choisis une option :</p>
       <div class="modal-actions" style="justify-content:flex-start">
         <button id="menuChangePseudo">Changer mon pseudo</button>
+        <button id="menuDownloadPNG">Télécharger PNG</button>
         <button id="menuOpenAdmin">Admin</button>
         <button id="menuClose" style="margin-left:auto">Fermer</button>
       </div>
@@ -265,8 +283,16 @@ function measureCanvasRect(){
   const showGridChk= document.getElementById('showGridChk');
   const trackerToggle = document.getElementById('trackerToggle');
   const trackerTip = document.getElementById('trackerTip');
+  const palSizeMinus = document.getElementById('palSizeMinus');
+  const palSizePlus  = document.getElementById('palSizePlus');
+  const uiSizeMinus  = document.getElementById('uiSizeMinus');
+  const uiSizePlus   = document.getElementById('uiSizePlus');
+
   const trackerXY  = trackerTip.querySelector('.xy');
   const trackerMeta= trackerTip.querySelector('.meta');
+  const SCALE_STEPS = [0.75, 1, 1.25];
+  function clampIndex(i){ return Math.max(0, Math.min(SCALE_STEPS.length-1, i)); }
+
 
   // === Trackeur (état mémorisé) ===
   let trackerOn = (localStorage.getItem('pw-tracker') ?? '1') === '1';
@@ -282,6 +308,25 @@ function measureCanvasRect(){
     if (!trackerOn) trackerTip.style.display = 'none';
   });
   updateTrackerToggleUI();
+
+      // --- État persistant des tailles
+  let palScaleIdx = clampIndex(parseInt(localStorage.getItem('pw-pal-scale-idx') || '1', 10)); // défaut 100%
+  let uiScaleIdx  = clampIndex(parseInt(localStorage.getItem('pw-ui-scale-idx')  || '1', 10)); // défaut 100%
+
+  function applyPalScale(){
+    const f = SCALE_STEPS[palScaleIdx];
+    document.documentElement.style.setProperty('--pal-scale', String(f));
+    // Le layout dépend des tailles → re-layout
+    scheduleRelayout();
+  }
+  function applyUiScale(){
+    const f = SCALE_STEPS[uiScaleIdx];
+    document.documentElement.style.setProperty('--ui-scale', String(f));
+    scheduleRelayout();
+  }
+  applyPalScale();
+  applyUiScale();
+
 
   // === Layout : viewport borné entre le header et la palette ===
  function layoutViewport(){
@@ -634,7 +679,7 @@ function zoomOut(){
   const pseudoCancel = document.getElementById('pseudoCancel');
   const pseudoError  = document.getElementById('pseudoError');
 
-  function updatePseudoBtn() { pseudoBtn.textContent = myName ? myName : 'Pseudo'; }
+  function updatePseudoBtn() { pseudoBtn.textContent = 'Option'; }
 
   function openPseudoMenu(){ pseudoMenuModal.hidden = false; }
   function closePseudoMenu(){ pseudoMenuModal.hidden = true; }
@@ -1107,6 +1152,93 @@ setInterval(()=>{ if (document.visibilityState === 'visible') tryArchive(); }, 1
   visualViewport.addEventListener('resize', scheduleRelayout, { passive: true });
   visualViewport.addEventListener('scroll',  scheduleRelayout, { passive: true });
 }
+  // --- Handlers +/− palette
+  if (palSizeMinus) palSizeMinus.addEventListener('click', ()=>{
+    palScaleIdx = clampIndex(palScaleIdx - 1);
+    localStorage.setItem('pw-pal-scale-idx', String(palScaleIdx));
+    applyPalScale();
+  });
+  if (palSizePlus) palSizePlus.addEventListener('click', ()=>{
+    palScaleIdx = clampIndex(palScaleIdx + 1);
+    localStorage.setItem('pw-pal-scale-idx', String(palScaleIdx));
+    applyPalScale();
+  });
+
+  // --- Handlers +/− UI haut
+  if (uiSizeMinus) uiSizeMinus.addEventListener('click', ()=>{
+    uiScaleIdx = clampIndex(uiScaleIdx - 1);
+    localStorage.setItem('pw-ui-scale-idx', String(uiScaleIdx));
+    applyUiScale();
+  });
+  if (uiSizePlus) uiSizePlus.addEventListener('click', ()=>{
+    uiScaleIdx = clampIndex(uiScaleIdx + 1);
+    localStorage.setItem('pw-ui-scale-idx', String(uiScaleIdx));
+    applyUiScale();
+  });
+  // --- Export PNG (x4), fond blanc pour cases vides
+  const menuDownloadPNG = document.getElementById('menuDownloadPNG');
+
+  function exportBoardPNG(scale = 4){
+    // 1) Peindre un canvas logique W×H à partir de la grille en forçant le blanc (#FFFFFF) pour "vide"
+    const base = document.createElement('canvas');
+    base.width = W; base.height = H;
+    const bctx = base.getContext('2d', { willReadFrequently: false });
+    const img = bctx.createImageData(W, H);
+    const data = img.data;
+
+    // Couleur par index → RGB
+    const rgbCache = new Map();
+    function hexToRgb(hex){
+      if (rgbCache.has(hex)) return rgbCache.get(hex);
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      const out = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [255,255,255];
+      rgbCache.set(hex, out);
+      return out;
+    }
+
+    for (let y=0; y<H; y++){
+      for (let x=0; x<W; x++){
+        const idx = Number.isFinite(grid[y][x]) ? grid[y][x] : 1; // 1 = #FFFFFF
+        const hex = colors[idx] || '#FFFFFF';
+        const [r,g,b] = hexToRgb(hex);
+        const p = (y*W + x) * 4;
+        data[p]   = r;
+        data[p+1] = g;
+        data[p+2] = b;
+        data[p+3] = 255;
+      }
+    }
+    bctx.putImageData(img, 0, 0);
+
+    // 2) Upscale propre x4 (ou autre), sans lissage
+    const out = document.createElement('canvas');
+    out.width = W * scale; out.height = H * scale;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(base, 0, 0, out.width, out.height);
+
+    // 3) Téléchargement
+    out.toBlob((blob)=>{
+      const a = document.createElement('a');
+      const name = formatParisFilename('export','png'); // déjà fournie dans ton code
+      if (!blob){
+        a.href = out.toDataURL('image/png');
+        a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 0);
+    }, 'image/png');
+  }
+
+  if (menuDownloadPNG){
+    menuDownloadPNG.addEventListener('click', ()=>{
+      exportBoardPNG(4); // x4 comme l’Admin
+    });
+  }
 
 
 window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
@@ -1196,3 +1328,4 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
