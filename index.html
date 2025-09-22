@@ -307,35 +307,53 @@
 
   function drawCell(x,y){ ctx.fillStyle = colors[grid[y][x]]; ctx.fillRect(x*PIX, y*PIX, PIX, PIX); }
   function fullPixels(){ for (let y=0;y<H;y++) for (let x=0;x<W;x++) drawCell(x,y); }
+// Cache/calque de la grille (offscreen)
+let gridOverlayCache = null;
+function makeGridOverlay(){
+  const oc = document.createElement('canvas');
+  oc.width = canvas.width;    // = W*PIX
+  oc.height = canvas.height;  // = H*PIX
+  const octx = oc.getContext('2d');
+  const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
 
-  function drawGridOverlay() {
-    const thin = 'rgba(0,0,0,0.15)', bold = 'rgba(0,0,0,0.35)';
-    ctx.save(); ctx.lineWidth = 1;
+  octx.save(); octx.lineWidth = 1;
 
-    ctx.beginPath(); ctx.strokeStyle = thin;
-    for (let x=0; x<=W; x++){
-      const xx = x*PIX + 0.5;
-      if (x % 10 === 0) {
-        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
-        ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = thin;
-      } else { ctx.moveTo(xx, 0); ctx.lineTo(xx, H*PIX); }
+  // Colonnes
+  octx.beginPath(); octx.strokeStyle = thin;
+  for (let x=0; x<=W; x++){
+    const xx = x*PIX + 0.5;
+    if (x % 10 === 0){
+      octx.stroke(); octx.beginPath(); octx.strokeStyle = bold;
+      octx.moveTo(xx, 0); octx.lineTo(xx, H*PIX); octx.stroke();
+      octx.beginPath(); octx.strokeStyle = thin;
+    } else {
+      octx.moveTo(xx, 0); octx.lineTo(xx, H*PIX);
     }
-    ctx.stroke();
-
-    ctx.beginPath(); ctx.strokeStyle = thin;
-    for (let y=0; y<=H; y++){
-      const yy = y*PIX + 0.5;
-      if (y % 10 === 0) {
-        ctx.stroke(); ctx.beginPath(); ctx.strokeStyle = bold;
-        ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); ctx.stroke();
-        ctx.beginPath(); ctx.strokeStyle = thin;
-      } else { ctx.moveTo(0, yy); ctx.lineTo(W*PIX, yy); }
-    }
-    ctx.stroke();
-    ctx.restore();
   }
+  octx.stroke();
 
+  // Lignes
+  octx.beginPath(); octx.strokeStyle = thin;
+  for (let y=0; y<=H; y++){
+    const yy = y*PIX + 0.5;
+    if (y % 10 === 0){
+      octx.stroke(); octx.beginPath(); octx.strokeStyle = bold;
+      octx.moveTo(0, yy); octx.lineTo(W*PIX, yy); octx.stroke();
+      octx.beginPath(); octx.strokeStyle = thin;
+    } else {
+      octx.moveTo(0, yy); octx.lineTo(W*PIX, yy);
+    }
+  }
+  octx.stroke();
+  octx.restore();
+
+  return oc;
+}
+
+function drawGridOverlay(){
+  if (!gridOverlayCache) gridOverlayCache = makeGridOverlay();
+  ctx.drawImage(gridOverlayCache, 0, 0);
+}
   fullPixels();
   if (localStorage.getItem('pw-show-grid') === '1') { showGridChk.checked = true; drawGridOverlay(); }
   else { showGridChk.checked = false; }
@@ -1040,6 +1058,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
