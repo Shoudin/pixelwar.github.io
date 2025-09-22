@@ -630,7 +630,6 @@
     });
     if (res.committed && commit) {
       try {
-        fullPixels(); if (showGridChk.checked) drawGridOverlay();
         await uploadSnapshot('archive', formatParisFilename('archive','png'));
         await lastArchRef.set(now);
       } catch(e) { console.warn('Archive échouée:', e); }
@@ -677,27 +676,58 @@
 
     const pixelsRef = db.ref('pixels');
 
-    pixelsRef.once('value').then(snap => {
-      const val = snap.val() || {};
-      let i = 0; const keys = Object.keys(val);
-      function chunk() {
-        const t0 = performance.now();
-        while (i < keys.length && performance.now() - t0 < 12) {
-          const key = keys[i++]; const [x,y] = key.split('_').map(Number);
-          const v = val[key] || {};
-          const col = Number.isFinite(+v.color) ? +v.color : 1;
-          if (x>=0 && x<W && y>=0 && y<H) {
-            grid[y][x] = col;
-            authorGrid[y][x] = v.author || null;
-            tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-            if (v.author) ensureName(v.author);
-          }
-        }
-        fullPixels(); if (showGridChk.checked) drawGridOverlay();
-        if (i < keys.length) requestAnimationFrame(chunk);
-      }
-      requestAnimationFrame(chunk);
-    });
+   pixelsRef.once('value').then(snap => {
+  const val = snap.val() || {};
+
+  // Cache RGB pour convertir les hex plus vite
+  const rgbCache = new Map();
+  function hexToRgb(hex){
+    if (rgbCache.has(hex)) return rgbCache.get(hex);
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    const out = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [255,255,255];
+    rgbCache.set(hex, out);
+    return out;
+  }
+
+  // Construire un ImageData logique W×H (une “cellule” = 1 pixel logique)
+  const img = ctx.createImageData(W, H);
+  const data = img.data;
+
+  for (let y = 0; y < H; y++){
+    for (let x = 0; x < W; x++){
+      const key = `${x}_${y}`;
+      const v = val[key] || {};
+      const idx = Number.isFinite(+v.color) ? +v.color : 1;
+
+      // Mises à jour de tes grilles mémoires existantes
+      grid[y][x] = idx;
+      authorGrid[y][x] = v.author || null;
+      tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+      if (v.author) ensureName(v.author);
+
+      // Peinture dans le buffer RGBA
+      const [r,g,b] = hexToRgb(colors[idx] || '#FFFFFF');
+      const p = (y*W + x) * 4;
+      data[p] = r; data[p+1] = g; data[p+2] = b; data[p+3] = 255;
+    }
+  }
+
+  // Peindre l'ImageData sur un canvas tampon W×H
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext('2d');
+  tctx.putImageData(img, 0, 0);
+
+  // Puis l’upscaler proprement vers ton canvas final (PIX scaling, sans lissage)
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  // Grille si cochée
+  if (showGridChk.checked) drawGridOverlay();
+});
 
     let overlayQueued = false;
     function queueOverlay(){
@@ -864,4 +894,5 @@
   </script>
 </body>
 </html>
+
 
