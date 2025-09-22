@@ -545,14 +545,18 @@ function updateSizer(){
     if (viewport.scrollTop < 0) viewport.scrollTop = 0;
     else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
   }
-    // ---- Scheduler de relayout (regroupe tout dans une seule rAF) ----
-  var layoutScheduled = false;
-    var isLayingOut = false; 
+   // ---- Scheduler de relayout (regroupe tout dans une seule rAF) ----
+var layoutScheduled = false;
+var isLayingOut = false; 
+var _ro = null; // ref du ResizeObserver pour (dé)brancher pendant le layout
+  
     function scheduleRelayout(){
   if (layoutScheduled) return;
   layoutScheduled = true;
   requestAnimationFrame(()=>{
     layoutScheduled = false;
+    // Débrancher le RO pour éviter toute notif durant le layout
+    if (_ro) _ro.disconnect();
     isLayingOut = true; // ← on pose le verrou
     layoutPaletteTwoRows();
     layoutViewport();
@@ -560,8 +564,11 @@ function updateSizer(){
     clampScroll();
     measureCanvasRect();
     isLayingOut = false; // ← on libère le verrou
+    // Rebrancher le RO
+    if (_ro) { _ro.observe(paletteBar); _ro.observe(uiBar); }
   });
 }
+
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
   function clampZoom(z){ return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
@@ -1293,14 +1300,16 @@ window.addEventListener('resize', scheduleRelayout);
 window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
 let roQueued = false;
-const ro = new ResizeObserver(()=>{
-  if (isLayingOut) return;       // pas de rebond pendant le layout
-  if (roQueued) return;          // coalescé une fois par frame
+let roQueued = false;
+_ro = new ResizeObserver(()=>{
+  if (isLayingOut) return;         // pas de rebond pendant le layout
+  if (roQueued) return;            // coalescé une fois par frame
   roQueued = true;
   requestAnimationFrame(()=>{ roQueued = false; scheduleRelayout(); });
 });
-ro.observe(paletteBar);
-ro.observe(uiBar);
+_ro.observe(paletteBar);
+_ro.observe(uiBar);
+
 
   document.getElementById('countdown').textContent = 'Pause';
 
@@ -1382,6 +1391,7 @@ ro.observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
