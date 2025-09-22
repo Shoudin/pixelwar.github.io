@@ -357,29 +357,29 @@ function measureCanvasRect(){
   applyUiScale();
 
   // === Layout : viewport borné entre le header et la palette ===
+let _vp_lastTop = '';   // ← ajoute ces 2 lignes quelque part au-dessus (scope global)
+let _vp_lastBottom = '';
+
 function layoutViewport(){
-  // Mesures PLEIN ÉCRAN (déjà “scalées” par le transform)
   const uiBottom = uiBar.getBoundingClientRect().bottom;
   const palTop   = paletteBar.getBoundingClientRect().top;
 
   const rootCS  = getComputedStyle(document.documentElement);
   const safeBtm = parseFloat(rootCS.getPropertyValue('--safe-bottom')) || 0;
 
-  // Le viewport commence juste sous la barre UI
-  viewport.style.top = Math.round(uiBottom + 8) + 'px';
+  const newTop = Math.round(uiBottom + 8) + 'px';
 
-  // Espace bas = distance entre le haut de la palette et le bas d’écran
-  // + marge + safe area
   let bottomSpace = Math.round(Math.max(0, window.innerHeight - palTop) + 8 + safeBtm);
-
-  // Fallback si la palette n’est pas encore mesurée au tout 1er layout
   if (!Number.isFinite(bottomSpace) || bottomSpace <= 0){
     const barHVar = parseFloat(rootCS.getPropertyValue('--bar-h')) || 92;
     bottomSpace = Math.round(barHVar + 8 + safeBtm);
   }
+  const newBottom = bottomSpace + 'px';
 
-  viewport.style.bottom = bottomSpace + 'px';
+  if (newTop !== _vp_lastTop){ viewport.style.top = newTop; _vp_lastTop = newTop; }
+  if (newBottom !== _vp_lastBottom){ viewport.style.bottom = newBottom; _vp_lastBottom = newBottom; }
 }
+
   // === Grilles mémoire ===
   let grid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>1));
   const authorGrid = Array.from({length:H}, ()=>Array.from({length:W}, ()=>null));
@@ -1312,13 +1312,14 @@ window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 
 
     let roQueued = false;
 const ro = new ResizeObserver(()=>{
-  if (isLayingOut) return;   // pas de rebond pendant le layout
-  if (roQueued) return;      // coalescé : 1 appel/frame
+  if (isLayingOut) return;
+  if (roQueued) return;
   roQueued = true;
   requestAnimationFrame(()=>{ roQueued = false; scheduleRelayout(); });
 });
-ro.observe(paletteBar);
-ro.observe(uiBar);
+ro.observe(paletteBar); 
+/* ro.observe(uiBar); */ /
+
 
   document.getElementById('countdown').textContent = 'Pause';
 
@@ -1400,6 +1401,7 @@ ro.observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
