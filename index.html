@@ -535,8 +535,8 @@ function updateSizer(){
     else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
   }
     // ---- Scheduler de relayout (regroupe tout dans une seule rAF) ----
-let layoutScheduled = false;
-function scheduleRelayout(){
+  var layoutScheduled = false;
+    function scheduleRelayout(){
   if (layoutScheduled) return;
   layoutScheduled = true;
   requestAnimationFrame(()=>{
@@ -1349,6 +1349,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
