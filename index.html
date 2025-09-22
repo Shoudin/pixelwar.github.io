@@ -914,20 +914,33 @@ function zoomOut(){
       }
     }, { passive: false });
 // --- Ctrl + molette : zoom autour du pointeur (façon Google Maps) ---
-viewport.addEventListener('wheel', (e) => {
-  if (!e.ctrlKey) return;      // On ne zoome que si Ctrl est enfoncé
-  e.preventDefault();          // Bloque le scroll de la page/viewport pendant le zoom
+// --- Ctrl/Cmd + molette : zoom rAF-coalescé autour du pointeur ---
+let _wheelZoomQueued = false;
+let _wheelTargetZoom = null;
+let _wheelLastX = 0, _wheelLastY = 0;
 
-  // Sens de la molette -> facteur de zoom
+viewport.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+
   const factor = (e.deltaY > 0) ? (1 / ZOOM_STEP) : ZOOM_STEP;
 
-  // Position écran du pointeur (en coordonnées "client")
-  const px = e.clientX;
-  const py = e.clientY;
+  // On accumule les facteurs dans une cible, et on applique 1x par frame
+  const base = (_wheelTargetZoom === null) ? zoom : _wheelTargetZoom;
+  _wheelTargetZoom = clampZoom(base * factor);
+  _wheelLastX = e.clientX; _wheelLastY = e.clientY;
 
-  // Zoom en gardant le point sous la souris au même endroit à l’écran
-  setZoomAroundPoint(clampZoom(zoom * factor), px, py);
+  if (_wheelZoomQueued) return;
+  _wheelZoomQueued = true;
+  requestAnimationFrame(() => {
+    _wheelZoomQueued = false;
+    if (_wheelTargetZoom !== null) {
+      setZoomAroundPoint(_wheelTargetZoom, _wheelLastX, _wheelLastY);
+      _wheelTargetZoom = null;
+    }
+  });
 }, { passive: false });
+
 
     setInterval(tryArchive, 10*1000);
   });
@@ -1027,6 +1040,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
