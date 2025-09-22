@@ -609,7 +609,6 @@
   }
 
   // Fréquentation cumulée
-  var chart = document.getElementById('chart'); var chartCtx = chart.getContext('2d');
   function dateToKey(d){ var y=d.getFullYear(), m=('0'+(d.getMonth()+1)).slice(-2), dd=('0'+d.getDate()).slice(-2); return y+'-'+m+'-'+dd; }
   function frDayLabel(d){ if (HAS_DATESTYLE) return new Intl.DateTimeFormat('fr-FR',{ dateStyle:'medium' }).format(d); var day=('0'+d.getDate()).slice(-2), mon=('0'+(d.getMonth()+1)).slice(-2), y=d.getFullYear(); return day+'/'+mon+'/'+y; }
   var selectedDay = new Date();
@@ -702,48 +701,6 @@ function drawLineChart(series, hasData){
       chartCtx.fill();
     }
   }
-}
-
-
-
-  // Grille horizontale + labels Y
-  var steps=4;
-  chartCtx.fillStyle='#666'; chartCtx.font='12px system-ui';
-  for(var i=0;i<=steps;i++){
-    var y = top + plotH*(1 - i/steps);
-    chartCtx.beginPath(); chartCtx.moveTo(left,y); chartCtx.lineTo(left+plotW,y); chartCtx.stroke();
-    var val = Math.round(maxY * i/steps);
-    chartCtx.fillText(String(val), 6, y-2);
-  }
-
-  // Ticks heures (0h, 6h, 12h, 18h, 24h)
-  for(var h=0; h<=24; h+=6){
-    var idx = Math.min(series.length-1, h*60);
-    var x = left + plotW*(idx/(series.length-1));
-    chartCtx.beginPath(); chartCtx.moveTo(x, top+plotH); chartCtx.lineTo(x, top+plotH+4); chartCtx.stroke();
-    chartCtx.fillText(String(h)+'h', x-8, top+plotH+16);
-  }
-
-  // Message “pas de données”
-  var chartNoData = document.getElementById('chartNoData');
-  if (!hasData){ chartNoData.style.display='flex'; return; } else { chartNoData.style.display='none'; }
-
-  // Tracé avec coupures : on NE relie PAS les minutes sans données (null)
-  chartCtx.beginPath();
-  chartCtx.strokeStyle='#111'; chartCtx.lineWidth=2;
-  var inSeg = false;
-  for(var k=0;k<series.length;k++){
-    var v = series[k];
-    var x = left + plotW*(k/(series.length-1));
-    if (typeof v === 'number'){
-      var y = top + plotH*(1 - (v/maxY));
-      if (!inSeg){ chartCtx.moveTo(x,y); inSeg = true; }
-      else { chartCtx.lineTo(x,y); }
-    } else {
-      inSeg = false; // coupe la ligne
-    }
-  }
-  chartCtx.stroke();
 }
 
   document.getElementById('dayPrev').addEventListener('click', function(){ selectedDay = new Date(selectedDay.getTime()-24*3600*1000); loadDayAndRender(); });
@@ -883,13 +840,6 @@ function drawLineChart(series, hasData){
   }
 
   // ---------- Leaderboard & chart init ----------
-  function initLeaderboard(){
-    db.ref('pixels').once('value').then(function(snap){
-      var data=snap.val()||{};
-      for (var k in data){
-        if(!data.hasOwnProperty(k)) continue;
-        var v=data[k]||{}; var uid=v.author||null; pixelOwners[k]=uid; if(uid) addCount(uid);
-      }
       renderLeaderboard();
       var ref=db.ref('pixels');
       ref.on('child_added', function(s){
