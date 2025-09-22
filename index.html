@@ -558,7 +558,9 @@ function zoomOut(){
       pinchInProgress = true; pinchStartDist = pointersDistance(); pinchStartZoom = zoom;
       setTouchActionDuringPinch(true); e.preventDefault();
     }
-  }, { passive:false });
+  }, { passive:false 
+  });
+    
  viewport.addEventListener('pointermove', (e)=>{
   if (!activePointers.has(e.pointerId)) return;
 
@@ -792,6 +794,7 @@ function rafHoverUpdate(){
 canvas.addEventListener('mousemove', (e)=>{
   _mmClientX = e.clientX; _mmClientY = e.clientY;
   if (!_mmQueued){ _mmQueued = true; requestAnimationFrame(rafHoverUpdate); }
+  }, { passive: true 
 });
 
 // Tactile (doigt) sur le canvas
@@ -804,6 +807,7 @@ canvas.addEventListener('pointermove', (e)=>{
 canvas.addEventListener('pointerleave', ()=>{
   trackerTip.style.display = 'none';
   coordsEl.textContent = '—';
+  }, { passive: true
 });
 
 
@@ -1072,9 +1076,10 @@ viewport.addEventListener('wheel', (e) => {
   updatePseudoBtn();
 
  if (window.visualViewport){
-  visualViewport.addEventListener('resize', scheduleRelayout);
-  visualViewport.addEventListener('scroll',  scheduleRelayout);
+  visualViewport.addEventListener('resize', scheduleRelayout, { passive: true });
+  visualViewport.addEventListener('scroll',  scheduleRelayout, { passive: true });
 }
+
 
 window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
 window.addEventListener('resize', scheduleRelayout);
@@ -1163,6 +1168,7 @@ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
   </script>
 </body>
 </html>
+
 
 
 
