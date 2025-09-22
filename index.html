@@ -40,6 +40,7 @@
       -webkit-overflow-scrolling: touch;
       touch-action: pan-x pan-y;
       background: #fff; z-index: 1;
+      contain: size layout;
     }
 
     #space{ position: relative; }
@@ -50,6 +51,8 @@
       display:inline-block;
       transform-origin: top left;
       transition: transform 120ms ease-out;
+      will-change: transform;
+      contain: layout paint;
     }
     #board{ image-rendering: pixelated; border:1px solid #333; touch-action: manipulation; display:block; }
 
@@ -61,6 +64,8 @@
       border:1px solid #333; border-radius:14px; background:#fff;
       box-shadow: 0 6px 18px rgba(0,0,0,.14);
       display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; z-index:10;
+      contain: content;
+      will-change: contents;
     }
     #paletteGrid{
       display:grid; grid-auto-flow: row dense;
@@ -387,6 +392,19 @@
     if (viewport.scrollTop < 0) viewport.scrollTop = 0;
     else if (viewport.scrollTop > maxTop) viewport.scrollTop = maxTop;
   }
+    // ---- Scheduler de relayout (regroupe tout dans une seule rAF) ----
+let layoutScheduled = false;
+function scheduleRelayout(){
+  if (layoutScheduled) return;
+  layoutScheduled = true;
+  requestAnimationFrame(()=>{
+    layoutScheduled = false;
+    layoutPaletteTwoRows();
+    layoutViewport();
+    updateSizer();
+    clampScroll();
+  });
+}
 
   let zoom = 1;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.12;
@@ -798,21 +816,20 @@
     setInterval(tryArchive, 10*1000);
   });
 
-  function relayoutAll(){ layoutPaletteTwoRows(); layoutViewport(); updateSizer(); clampScroll(); }
   buildPalette(); updateCursor();
   updatePseudoBtn();
 
-  if (window.visualViewport){
-    visualViewport.addEventListener('resize', layoutViewport);
-    visualViewport.addEventListener('scroll',  layoutViewport);
-  }
+ if (window.visualViewport){
+  visualViewport.addEventListener('resize', scheduleRelayout);
+  visualViewport.addEventListener('scroll',  scheduleRelayout);
+}
 
-  window.addEventListener('load', ()=>{ relayoutAll(); applyZoom(); clampScroll(); });
-  window.addEventListener('resize', ()=>{ relayoutAll(); });
-  window.addEventListener('orientationchange', ()=>{ setTimeout(relayoutAll, 200); });
+window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
+window.addEventListener('resize', scheduleRelayout);
+window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
-  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(paletteBar);
-  new ResizeObserver(()=>{ layoutViewport(); clampScroll(); }).observe(uiBar);
+ new ResizeObserver(()=>{ scheduleRelayout(); }).observe(paletteBar);
+new ResizeObserver(()=>{ scheduleRelayout(); }).observe(uiBar);
 
   document.getElementById('countdown').textContent = 'Pause';
 
@@ -894,5 +911,6 @@
   </script>
 </body>
 </html>
+
 
 
