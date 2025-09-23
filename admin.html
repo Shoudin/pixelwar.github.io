@@ -426,9 +426,14 @@
   });
   db.ref('stats/clicksTotal').on('value', function(s){ kClicks.textContent = String(s.val() || 0); });
   db.ref('config/lastResetAt').on('value', function(s){
-    var ts = s.val();
-    lastResetEl.textContent = ts ? fmtDateTime(ts) : '—';
-  });
+  var ts = s.val();
+  if (!ts) {
+    lastResetEl.innerHTML = 'Reset : <span style="color:red">Pause</span>';
+  } else {
+    lastResetEl.innerHTML = 'Reset : <span style="color:red">Ce soir Minuit</span>';
+  }
+});
+
 
   // ---------- Aperçu + Export (x4) ----------
   function loadBoardToPreview(){
