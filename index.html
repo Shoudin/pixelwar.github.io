@@ -992,7 +992,9 @@ async function uploadSnapshot(folder, filename){
   const PERIOD_RESET=48*60*60*1000, PERIOD_ARCHIVE=60*1000;
   const nextResetRef=db.ref('config/nextResetAt'), lastResetRef=db.ref('config/lastResetAt');
   const nextArchRef=db.ref('config/nextArchiveAt'), lastArchRef=db.ref('config/lastArchiveAt');
-  function updateCountdown(ts){ countdownEl.textContent = 'Pause'; }
+function updateCountdown(ts){
+  countdownEl.innerHTML = '<span style="color:#b00020;font-weight:700">Ce soir&nbsp;Minuit</span>';
+}
   async function tryReset(){ return; }
   async function tryArchive(){
     const now=Date.now(); let commit=false, newNext=null;
@@ -1436,8 +1438,8 @@ ro.observe(paletteBar);
 /* ro.observe(uiBar); */
 
 
-  document.getElementById('countdown').textContent = 'Pause';
-
+document.getElementById('countdown').innerHTML = '<span style="color:#b00020;font-weight:700">Ce soir&nbsp;Minuit</span>';
+    
   (function setupOnlineByHourHeartbeat(){
     const PING_EVERY_MS = 5 * 60 * 1000;
     const KEY_PREFIX = 'pw-traffic-last-';
@@ -1516,3 +1518,4 @@ ro.observe(paletteBar);
   </script>
 </body>
 </html>
+
