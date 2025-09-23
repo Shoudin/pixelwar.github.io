@@ -81,9 +81,10 @@
       grid-auto-rows: var(--sw);
       row-gap: var(--gap); column-gap: var(--gap); place-items:center;
     }
+    
     .sw{ width:var(--sw); height:var(--sw); border:1px solid #000; border-radius:6px; cursor:pointer; }
     .activeSw{ outline:2px solid #000; outline-offset:2px; }
-
+    
     .dockZoom{ display:flex; flex-direction:column; gap:6px; align-items:center; justify-content:center; }
     .dockZoom button{ width:36px; height:28px; border:1px solid #aaa; border-radius:8px; background:#fff; cursor:pointer; font-size:16px; line-height:1; }
     .sizeControls{ display:flex; gap:6px; align-items:center; justify-content:center; }
@@ -136,6 +137,13 @@
       body{ margin: 12px; }
       .dockZoom button{ width: 32px; height: 26px; font-size: 15px; }
     }
+    #pseudoMenuModal .modal-card ul > li > button{
+  width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #bbb; background: #fff; cursor: pointer;
+}
+#pseudoMenuModal .modal-card ul > li[style*="grid-template-columns"] > button{
+  width: 42px; height: 36px; padding: 0; font-size: 20px; line-height: 1;
+}
+
   </style>
 </head>
 <body>
@@ -159,10 +167,6 @@
     <label class="toggle" title="Afficher/masquer la grille">
       <input type="checkbox" id="showGridChk"> Grille
     </label>
-    <div class="sizeControls" aria-label="Taille menu">
-  <button id="uiSizeMinus" title="Menu plus petit">−</button>
-  <button id="uiSizePlus"  title="Menu plus grand">+</button>
-</div>
 
   </div>
 
@@ -181,10 +185,6 @@
       <button id="dockZIn"  title="Zoom +">+</button>
       <button id="dockZOut" title="Zoom -">−</button>
     </div>
-       <div class="sizeControls" aria-label="Taille palette">
-      <button id="palSizeMinus" title="Palette plus petite">−</button>
-      <button id="palSizePlus"  title="Palette plus grande">+</button>
-    </div>
   </aside>
 
   <div id="trackerTip" role="status" aria-live="polite">
@@ -193,18 +193,35 @@
   </div>
 
   <div id="pseudoMenuModal" class="modal" hidden>
-    <div class="modal-backdrop"></div>
-    <div class="modal-card">
-      <h2>Mon compte</h2>
-      <p class="hint">Choisis une option :</p>
-      <div class="modal-actions" style="justify-content:flex-start">
-        <button id="menuChangePseudo">Changer mon pseudo</button>
+  <div class="modal-backdrop"></div>
+  <div class="modal-card">
+    <h2>Options</h2>
+    <ul style="list-style:none; margin:10px 0 0 0; padding:0; display:flex; flex-direction:column; gap:10px;">
+      <li>
+        <button id="menuChangePseudo">Changer pseudo</button>
+      </li>
+      <li>
         <button id="menuDownloadPNG">Télécharger PNG</button>
+      </li>
+      <li style="display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px;">
+        <button id="uiSizeMinus" title="Menu plus petit" aria-label="Réduire Menu">−</button>
+        <span style="text-align:center; font-weight:600;">Menu</span>
+        <button id="uiSizePlus" title="Menu plus grand" aria-label="Agrandir Menu">+</button>
+      </li>
+      <li style="display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px;">
+        <button id="palSizeMinus" title="Palette plus petite" aria-label="Réduire Palette">−</button>
+        <span style="text-align:center; font-weight:600;">Palette</span>
+        <button id="palSizePlus" title="Palette plus grande" aria-label="Agrandir Palette">+</button>
+      </li>
+      <li>
         <button id="menuOpenAdmin">Admin</button>
-        <button id="menuClose" style="margin-left:auto">Fermer</button>
-      </div>
+      </li>
+    </ul>
+    <div class="modal-actions" style="justify-content:flex-end">
+      <button id="menuClose">Fermer</button>
     </div>
   </div>
+</div>
 
   <div id="pseudoModal" class="modal" hidden>
     <div class="modal-backdrop"></div>
@@ -753,8 +770,8 @@ function zoomOut(){
   const pseudoCancel = document.getElementById('pseudoCancel');
   const pseudoError  = document.getElementById('pseudoError');
 
-  function updatePseudoBtn() { pseudoBtn.textContent = 'Option'; }
-
+  function updatePseudoBtn() { pseudoBtn.textContent = 'Options'; }
+    
   function openPseudoMenu(){ pseudoMenuModal.hidden = false; }
   function closePseudoMenu(){ pseudoMenuModal.hidden = true; }
   menuChangePseudo.addEventListener('click', ()=>{ closePseudoMenu(); openPseudoModal(); });
@@ -1499,20 +1516,3 @@ ro.observe(paletteBar);
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
