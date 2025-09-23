@@ -1064,6 +1064,10 @@ window.addEventListener('pagehide', flushClicks);
 
   // Grille si cochée
   if (showGridChk.checked) drawGridOverlay();
+  // === Listeners temps réel après le rendu initial ===
+  pixelsRef.on('child_changed', onPixelUpdate);
+  pixelsRef.on('child_added',  onPixelUpdate);
+
 });
 
     let overlayQueued = false;
@@ -1099,8 +1103,8 @@ function enqueueCell(x, y){
   paintQueue.set(`${x}_${y}`, { x, y });
   schedulePixelPaint();
 }
-
-   pixelsRef.on('child_added', snap => {
+// ---- Handler commun des updates temps réel (ajout/changement d’un pixel)
+function onPixelUpdate(snap){
   const [x,y] = snap.key.split('_').map(Number);
   const v = snap.val() || {};
   const col = Number.isFinite(+v.color) ? +v.color : 1;
@@ -1109,26 +1113,9 @@ function enqueueCell(x, y){
     authorGrid[y][x] = v.author || null;
     tsGrid[y][x] = (typeof v.ts === 'number') ? v.ts : null;
     if (v.author) ensureName(v.author);
-
-    //  ne dessine pas tout de suite : on met en file
-    enqueueCell(x, y);
+    enqueueCell(x, y);           // ← on dessine via le batch/frame
   }
-});
-
-pixelsRef.on('child_changed', snap => {
-  const [x,y] = snap.key.split('_').map(Number);
-  const v = snap.val() || {};
-  const col = Number.isFinite(+v.color) ? +v.color : 1;
-  if (x>=0 && x<W && y>=0 && y<H) {
-    grid[y][x] = col;
-    authorGrid[y][x] = v.author || null;
-    tsGrid[y][x] = (typeof v.ts === 'number') ? v.ts : null;
-    if (v.author) ensureName(v.author);
-
-    //  batch aussi les changements
-    enqueueCell(x, y);
-  }
-});
+}
 
 
     canvas.addEventListener('click', async (e)=>{
