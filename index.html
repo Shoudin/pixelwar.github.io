@@ -1038,13 +1038,22 @@ window.addEventListener('pagehide', flushClicks);
 });
 
 
-    const myPresenceRef = presenceRootRef.child(user.uid);
-    infoConnectedRef.on('value', snap => {
-      if (snap.val() === true) {
-        myPresenceRef.onDisconnect().remove().catch(()=>{});
-        myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
-      }
-    });
+ const myPresenceRef = presenceRootRef.child(user.uid);
+
+// Garde d’attachement: n’attache qu’une seule fois
+let _infoConnAttached = (typeof _infoConnAttached !== 'undefined') ? _infoConnAttached : false;
+
+if (!_infoConnAttached) {
+  _infoConnAttached = true;
+
+  infoConnectedRef.on('value', snap => {
+    if (snap.val() === true) {
+      myPresenceRef.onDisconnect().remove().catch(()=>{});
+      myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+    }
+  });
+}
+
 // Garde d’attachement: n’attache qu’une seule fois
 let _presenceAttached = (typeof _presenceAttached !== 'undefined') ? _presenceAttached : false;
 
@@ -1470,6 +1479,7 @@ ro.observe(paletteBar);
   </script>
 </body>
 </html>
+
 
 
 
