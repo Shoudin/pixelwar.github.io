@@ -262,7 +262,41 @@ window.addEventListener('unhandledrejection', (e) => {
     measurementId: "G-FR7NC03RCY"
   };
 
-  firebase.initializeApp(firebaseConfig);
+ 
+firebase.initializeApp(firebaseConfig);
+
+// --- [NOUVEAU] Watchers Firebase propres (compat API) ---
+const _fbListeners = new Map(); // path -> { ref, cb }
+function watchValue(path, handler) {
+  if (_fbListeners.has(path)) return _fbListeners.get(path).off; // déjà attaché
+  const ref = firebase.database().ref(path);
+  const cb = snap => handler(snap);
+  ref.on('value', cb);
+  const off = () => { try { ref.off('value', cb); } catch(e){} _fbListeners.delete(path); };
+  _fbListeners.set(path, { ref, cb, off });
+  return off;
+}
+function offAllWatchers(){
+  for (const {ref, cb} of _fbListeners.values()) {
+    try { ref.off('value', cb); } catch(e){}
+  }
+  _fbListeners.clear();
+}
+
+// --- [NOUVEAU] Garde anti-feedback (empêche les boucles écriture<->lecture) ---
+let _isApplyingRemote = false;
+
+function safeSet(ref, data) {
+  if (_isApplyingRemote) return;   // ignore les writes pendant l’application UI
+  return ref.set(data);
+}
+function safeUpdate(ref, data) {
+  if (_isApplyingRemote) return;
+  return ref.update(data);
+}
+
+// (ton code existant continue ici…)
+
   const auth = firebase.auth();
   const db   = firebase.database();
 let storage = null;
@@ -778,12 +812,16 @@ function zoomOut(){
         return;
       }
 
-      await db.ref(`users/${CURRENT_UID}/name`).set(raw);
+      {
+  const nameRef = db.ref(`users/${CURRENT_UID}/name`);
+  await safeSet(nameRef, raw);
+}
 
-      if (prevKey && prevKey !== key){
-        const refOld = db.ref(`users_by_name/${prevKey}`);
-        await refOld.transaction(cur => (cur === CURRENT_UID ? null : cur));
-      }
+if (prevKey && prevKey !== key){
+  const refOld = db.ref(`users_by_name/${prevKey}`);
+  await refOld.transaction(cur => (cur === CURRENT_UID ? null : cur));
+}
+
 
       myName = raw;
       namesByUid[CURRENT_UID] = raw;
@@ -986,13 +1024,19 @@ window.addEventListener('pagehide', flushClicks);
 
 
 
-    db.ref(`users/${CURRENT_UID}/name`).on('value', s=>{
-      const n = s.val();
-      myName = (typeof n === 'string' && n) ? n : null;
-      if (myName) namesByUid[CURRENT_UID] = myName;
-      updatePseudoBtn();
-      if (!myName) openPseudoModal();
-    });
+    watchValue(`users/${CURRENT_UID}/name`, (s)=>{
+  _isApplyingRemote = true;
+  try {
+    const n = s.val();
+    myName = (typeof n === 'string' && n) ? n : null;
+    if (myName) namesByUid[CURRENT_UID] = myName;
+    updatePseudoBtn();
+    if (!myName) openPseudoModal();
+  } finally {
+    _isApplyingRemote = false;
+  }
+});
+
 
     const myPresenceRef = presenceRootRef.child(user.uid);
     infoConnectedRef.on('value', snap => {
@@ -1001,74 +1045,108 @@ window.addEventListener('pagehide', flushClicks);
         myPresenceRef.set({ online: true, ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
       }
     });
+// Garde d’attachement: n’attache qu’une seule fois
+let _presenceAttached = (typeof _presenceAttached !== 'undefined') ? _presenceAttached : false;
 
-    let online = 0;
-    presenceRootRef.once('value').then(s => {
-      online = s.numChildren(); onlineEl.textContent = String(online); onlineEl.classList.remove('dim');
-    });
-    presenceRootRef.on('child_added',  ()=>{ online++;  onlineEl.textContent = String(online); });
-    presenceRootRef.on('child_removed', ()=>{ online = Math.max(0, online-1); onlineEl.textContent = String(online); });
+let online = 0;
 
-    clicksRef.on('value', s => { clickEl.textContent = String(s.val() || 0); clickEl.classList.remove('dim'); });
+if (!_presenceAttached) {
+  _presenceAttached = true;
 
-    const pixelsRef = db.ref('pixels');
+  presenceRootRef.once('value').then(s => {
+    online = s.numChildren();
+    onlineEl.textContent = String(online);
+    onlineEl.classList.remove('dim');
+  });
 
-   pixelsRef.once('value').then(snap => {
-  const val = snap.val() || {};
+  presenceRootRef.on('child_added', ()=>{
+    online++;
+    onlineEl.textContent = String(online);
+  });
 
-  // Cache RGB pour convertir les hex plus vite
-  const rgbCache = new Map();
-  function hexToRgb(hex){
-    if (rgbCache.has(hex)) return rgbCache.get(hex);
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    const out = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [255,255,255];
-    rgbCache.set(hex, out);
-    return out;
+  presenceRootRef.on('child_removed', ()=>{
+    online = Math.max(0, online-1);
+    onlineEl.textContent = String(online);
+  });
+}
+
+
+watchValue('stats/clicksTotal', (s)=>{
+  _isApplyingRemote = true;
+  try {
+    clickEl.textContent = String(s.val() || 0);
+    clickEl.classList.remove('dim');
+  } finally {
+    _isApplyingRemote = false;
   }
-
-  // Construire un ImageData logique W×H (une “cellule” = 1 pixel logique)
-  const img = ctx.createImageData(W, H);
-  const data = img.data;
-
-  for (let y = 0; y < H; y++){
-    for (let x = 0; x < W; x++){
-      const key = `${x}_${y}`;
-      const v = val[key] || {};
-      const idx = Number.isFinite(+v.color) ? +v.color : 1;
-
-      // Mises à jour de tes grilles mémoires existantes
-      grid[y][x] = idx;
-      authorGrid[y][x] = v.author || null;
-      tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-      if (v.author) ensureName(v.author);
-
-      // Peinture dans le buffer RGBA
-      const [r,g,b] = hexToRgb(colors[idx] || '#FFFFFF');
-      const p = (y*W + x) * 4;
-      data[p] = r; data[p+1] = g; data[p+2] = b; data[p+3] = 255;
-    }
-  }
-
-  // Peindre l'ImageData sur un canvas tampon W×H
-  const tmp = document.createElement('canvas');
-  tmp.width = W; tmp.height = H;
-  const tctx = tmp.getContext('2d');
-  tctx.putImageData(img, 0, 0);
-
-  // Puis l’upscaler proprement vers ton canvas final (PIX scaling, sans lissage)
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
-  ctx.restore();
-
-  // Grille si cochée
-  if (showGridChk.checked) drawGridOverlay();
-  // === Listeners temps réel après le rendu initial ===
-  pixelsRef.on('child_changed', onPixelUpdate);
-  pixelsRef.on('child_added',  onPixelUpdate);
-
 });
+
+ // Garde d’attachement: n’attache qu’une seule fois
+let _pixelsAttached = (typeof _pixelsAttached !== 'undefined') ? _pixelsAttached : false;
+
+const pixelsRef = db.ref('pixels');
+
+if (!_pixelsAttached) {
+  _pixelsAttached = true;
+
+  pixelsRef.once('value').then(snap => {
+    const val = snap.val() || {};
+
+    // Cache RGB pour convertir les hex plus vite
+    const rgbCache = new Map();
+    function hexToRgb(hex){
+      if (rgbCache.has(hex)) return rgbCache.get(hex);
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      const out = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [255,255,255];
+      rgbCache.set(hex, out);
+      return out;
+    }
+
+    // Construire un ImageData logique W×H (une “cellule” = 1 pixel logique)
+    const img = ctx.createImageData(W, H);
+    const data = img.data;
+
+    for (let y = 0; y < H; y++){
+      for (let x = 0; x < W; x++){
+        const key = `${x}_${y}`;
+        const v = val[key] || {};
+        const idx = Number.isFinite(+v.color) ? +v.color : 1;
+
+        // Mises à jour de tes grilles mémoires existantes
+        grid[y][x] = idx;
+        authorGrid[y][x] = v.author || null;
+        tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
+        if (v.author) ensureName(v.author);
+
+        // Peinture dans le buffer RGBA
+        const [r,g,b] = hexToRgb(colors[idx] || '#FFFFFF');
+        const p = (y*W + x) * 4;
+        data[p] = r; data[p+1] = g; data[p+2] = b; data[p+3] = 255;
+      }
+    }
+
+    // Peindre l'ImageData sur un canvas tampon W×H
+    const tmp = document.createElement('canvas');
+    tmp.width = W; tmp.height = H;
+    const tctx = tmp.getContext('2d');
+    tctx.putImageData(img, 0, 0);
+
+    // Puis l’upscaler proprement vers ton canvas final (PIX scaling, sans lissage)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    // Grille si cochée
+    if (showGridChk.checked) drawGridOverlay();
+
+    // === Listeners temps réel après le rendu initial ===
+    pixelsRef.on('child_changed', onPixelUpdate);
+    pixelsRef.on('child_added',  onPixelUpdate);
+  });
+}
+
 
     let overlayQueued = false;
     function queueOverlay(){
@@ -1117,29 +1195,33 @@ function onPixelUpdate(snap){
   }
 }
 
+canvas.addEventListener('click', async (e)=>{
+  if (!myName) { openPseudoModal(); return; }
+  const rect = canvas.getBoundingClientRect();
+  const localX = (e.clientX - rect.left) / zoom;
+  const localY = (e.clientY - rect.top)  / zoom;
+  const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
+  if (x<0||x>=W||y<0||y>=H) return;
+  if (selected < 0 || selected >= colors.length) return;
+  const key = `${x}_${y}`;
+  try {
+    const payload = {
+      color: selected,
+      author: CURRENT_UID || 'anon',
+      ts: firebase.database.ServerValue.TIMESTAMP
+    };
+    // Écritures "propres" via safeSet (zéro feedback même si un watcher traîne ailleurs)
+    const pixRef = db.ref(`pixels/${key}`);
+    await safeSet(pixRef, payload);
 
-    canvas.addEventListener('click', async (e)=>{
-      if (!myName) { openPseudoModal(); return; }
-      const rect = canvas.getBoundingClientRect();
-      const localX = (e.clientX - rect.left) / zoom;
-      const localY = (e.clientY - rect.top)  / zoom;
-      const x = Math.floor(localX / PIX), y = Math.floor(localY / PIX);
-      if (x<0||x>=W||y<0||y>=H) return;
-      if (selected < 0 || selected >= colors.length) return;
-      const key = `${x}_${y}`;
-      try {
-        const payload = {
-          color: selected,
-          author: CURRENT_UID || 'anon',
-          ts: firebase.database.ServerValue.TIMESTAMP
-        };
-        await db.ref(`pixels/${key}`).set(payload);
-        await db.ref(`history/${key}`).push(payload);
-       _clicksBuffer++; scheduleClicksFlush();
-      } catch (err) {
-        console.error('write pixel / click count error', err);
-      }
-    });
+    const histRef = db.ref(`history/${key}`).push();
+    await safeSet(histRef, payload);
+
+    _clicksBuffer++; scheduleClicksFlush();
+  } catch (err) {
+    console.error('write pixel / click count error', err);
+  }
+});
 
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
@@ -1388,6 +1470,7 @@ ro.observe(paletteBar);
   </script>
 </body>
 </html>
+
 
 
 
