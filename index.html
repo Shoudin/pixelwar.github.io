@@ -1040,11 +1040,11 @@ window.addEventListener('pagehide', flushClicks);
 
  const myPresenceRef = presenceRootRef.child(user.uid);
 
-// Garde d’attachement: n’attache qu’une seule fois
-let _infoConnAttached = (typeof _infoConnAttached !== 'undefined') ? _infoConnAttached : false;
+// Garde d’attachement: n’attache qu’une seule fois (safe global)
+if (!('_infoConnAttached' in window)) window._infoConnAttached = false;
 
-if (!_infoConnAttached) {
-  _infoConnAttached = true;
+if (!window._infoConnAttached) {
+  window._infoConnAttached = true;
 
   infoConnectedRef.on('value', snap => {
     if (snap.val() === true) {
@@ -1054,13 +1054,14 @@ if (!_infoConnAttached) {
   });
 }
 
-// Garde d’attachement: n’attache qu’une seule fois
-let _presenceAttached = (typeof _presenceAttached !== 'undefined') ? _presenceAttached : false;
+
+// Garde d’attachement: n’attache qu’une seule fois (safe global)
+if (!('_presenceAttached' in window)) window._presenceAttached = false;
 
 let online = 0;
 
-if (!_presenceAttached) {
-  _presenceAttached = true;
+if (!window._presenceAttached) {
+  window._presenceAttached = true;
 
   presenceRootRef.once('value').then(s => {
     online = s.numChildren();
@@ -1091,7 +1092,7 @@ watchValue('stats/clicksTotal', (s)=>{
 });
 
  // Garde d’attachement: n’attache qu’une seule fois
-let _pixelsAttached = (typeof _pixelsAttached !== 'undefined') ? _pixelsAttached : false;
+if (!('_pixelsAttached' in window)) window._pixelsAttached = false;
 
 const pixelsRef = db.ref('pixels');
 
