@@ -781,13 +781,22 @@ function zoomOut(){
   function toKey(s){ return s.toLowerCase().replace(/[^a-z0-9_]/g,''); }
   function isValidName(s){ return /^[A-Za-z0-9_]{3,20}$/.test(s); }
 
-  function ensureName(uid){
-    if (!uid || namesByUid[uid]) return;
-    db.ref(`users/${uid}/name`).once('value').then(s=>{
-      const n = s.val();
-      if (n && typeof n === 'string') namesByUid[uid] = n;
-    }).catch(()=>{});
-  }
+  // Cache des requêtes en cours pour ne jamais lancer 2x la même
+const _pendingNames = new Set();
+
+function ensureName(uid){
+  if (!uid) return;
+  if (namesByUid[uid]) return;          // déjà connu
+  if (_pendingNames.has(uid)) return;   // requête déjà en vol
+  _pendingNames.add(uid);
+  db.ref(`users/${uid}/name`).once('value').then(s=>{
+    const n = s.val();
+    if (n && typeof n === 'string') namesByUid[uid] = n;
+  }).catch(()=>{}).finally(()=>{
+    _pendingNames.delete(uid);
+  });
+}
+
 
   async function savePseudo(){
     try {
@@ -1096,8 +1105,9 @@ if (!('_pixelsAttached' in window)) window._pixelsAttached = false;
 
 const pixelsRef = db.ref('pixels');
 
-if (!_pixelsAttached) {
-  _pixelsAttached = true;
+if (!('_pixelsAttached' in window)) window._pixelsAttached = false;
+if (!window._pixelsAttached) {
+  window._pixelsAttached = true;
 
   pixelsRef.once('value').then(snap => {
     const val = snap.val() || {};
@@ -1116,6 +1126,9 @@ if (!_pixelsAttached) {
     const img = ctx.createImageData(W, H);
     const data = img.data;
 
+    // [NOUVEAU] Collecte des UID auteurs uniques
+    const uidsToFetch = new Set();
+
     for (let y = 0; y < H; y++){
       for (let x = 0; x < W; x++){
         const key = `${x}_${y}`;
@@ -1126,7 +1139,7 @@ if (!_pixelsAttached) {
         grid[y][x] = idx;
         authorGrid[y][x] = v.author || null;
         tsGrid[y][x] = typeof v.ts === 'number' ? v.ts : null;
-        if (v.author) ensureName(v.author);
+        if (v.author) uidsToFetch.add(v.author); // [REMPLACÉ] plus de ensureName ici
 
         // Peinture dans le buffer RGBA
         const [r,g,b] = hexToRgb(colors[idx] || '#FFFFFF');
@@ -1151,11 +1164,17 @@ if (!_pixelsAttached) {
     // Grille si cochée
     if (showGridChk.checked) drawGridOverlay();
 
+    // [NOUVEAU] Déclencher une seule lecture par UID
+    for (const uid of uidsToFetch) {
+      ensureName(uid);
+    }
+
     // === Listeners temps réel après le rendu initial ===
     pixelsRef.on('child_changed', onPixelUpdate);
     pixelsRef.on('child_added',  onPixelUpdate);
   });
 }
+
 
 
     let overlayQueued = false;
@@ -1480,6 +1499,7 @@ ro.observe(paletteBar);
   </script>
 </body>
 </html>
+
 
 
 
