@@ -1068,6 +1068,20 @@ window.addEventListener('pagehide', flushClicks);
 
  const myPresenceRef = presenceRootRef.child(user.uid);
 
+    // ——— Presence onDisconnect SAFE ———
+let _odHandle; // handle renvoyé par onDisconnect
+
+function presenceArm(){
+  try {
+    _odHandle = myPresenceRef.onDisconnect();
+    _odHandle.remove().catch(()=>{});
+  } catch(e){ console.log('[onDisconnect setup]', e); }
+}
+async function presenceCancel(){
+  try { await _odHandle?.cancel?.(); } catch(e){ console.log('[onDisconnect.cancel]', e); }
+  finally { _odHandle = undefined; }
+}
+
 // Garde d’attachement: n’attache qu’une seule fois (safe global)
 if (!('_infoConnAttached' in window)) window._infoConnAttached = false;
 
@@ -1313,6 +1327,12 @@ setInterval(()=>{ if (document.visibilityState === 'visible') tryArchive(); }, 1
   });
 
   buildPalette(); updateCursor();
+    const _origBuildPalette = buildPalette;
+buildPalette = function(){
+  _origBuildPalette.apply(this, arguments);
+  const newPal = document.getElementById('paletteBar');
+  roObserveSafe(newPal);
+};
   updatePseudoBtn();
 
 if (window.visualViewport){
@@ -1427,14 +1447,38 @@ window.addEventListener('load', ()=>{ applyZoom(); scheduleRelayout(); });
 window.addEventListener('resize', scheduleRelayout);
 window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleRelayout, 200); });
 
-    let roQueued = false;
-const ro = new ResizeObserver(()=>{
-  if (isLayingOut) return;
-  if (roQueued) return;
-  roQueued = true;
-  requestAnimationFrame(()=>{ roQueued = false; scheduleRelayout(); });
-});
-ro.observe(paletteBar); 
+// ——— ResizeObserver SAFE + lifecycle ———
+let _roInstance;
+let _roQueued = false;
+
+function roEnsure(){
+  if (!_roInstance){
+    _roInstance = new ResizeObserver(()=>{
+      if (isLayingOut) return;
+      if (_roQueued) return;
+      _roQueued = true;
+      requestAnimationFrame(()=>{ _roQueued = false; scheduleRelayout(); });
+    });
+  }
+  return _roInstance;
+}
+function roObserveSafe(el){
+  try { if (el) roEnsure().observe(el); } catch(e){ console.log('[RO observe error]', e); }
+}
+function roDisconnectSafe(){
+  try { _roInstance?.disconnect?.(); } catch(e){ console.log('[RO disconnect error]', e); }
+  _roInstance = undefined;
+}
+
+// (re)brancher au chargement
+roObserveSafe(paletteBar);
+
+// Couper quand l’onglet part (mobile, bfcache), rebrancher au retour
+window.addEventListener('pagehide', ()=>{ roDisconnectSafe(); });
+window.addEventListener('pageshow', ()=>{ roObserveSafe(document.getElementById('paletteBar')); });
+
+// ⚠️ si tu remplaces le DOM de la palette ailleurs, pense à rappeler roObserveSafe(nouveauNoeud)
+
 /* ro.observe(uiBar); */
 
 
@@ -1471,6 +1515,8 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
     document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') { ping(); start(); } else { stop(); } });
     window.addEventListener('pagehide', stop);
     window.addEventListener('beforeunload', stop);
+// Annule onDisconnect quand l’onglet part ; réarmé automatiquement à la reconnexion
+    window.addEventListener('pagehide', ()=>{ presenceCancel(); });
 
     start();
   })();
@@ -1518,5 +1564,6 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
   </script>
 </body>
 </html>
+
 
 
