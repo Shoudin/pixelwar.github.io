@@ -502,15 +502,19 @@
     });
   });
 
-  document.getElementById('btnClear').addEventListener('click', function(){
-    if(!ADMIN_OK || confirmClear.value!=='CLEAR') return;
-    if(!confirm('Confirmer la purge complète du board ?')) return;
-    db.ref('pixels').remove().then(function(){
-      return db.ref('config/lastResetAt').set(Date.now());
-    }).then(function(){
-      sysStatus.textContent='Purge effectuée.'; return loadBoardToPreview();
-    }).catch(function(){ sysStatus.textContent='Erreur purge.'; });
-  });
+document.getElementById('btnClear').addEventListener('click', async function(){
+  if(!ADMIN_OK || confirmClear.value!=='CLEAR') return;
+  if(!confirm('Confirmer la purge complète du board ?')) return;
+  try{
+    await doMosaicResetOnBackend();
+    sysStatus.textContent = 'Purge effectuée (pixels + historique + clics = 0).';
+    await loadBoardToPreview();
+  }catch(e){
+    console.error(e);
+    sysStatus.textContent = 'Erreur purge.';
+  }
+});
+
 
   // ---------- Statistiques (leaderboard + history + fréquentation) ----------
   var namesByUid = {};
@@ -861,6 +865,22 @@ function drawLineChart(series, hasData){
   document.getElementById('tab-gestion').addEventListener('click', function(){
     renderUsers();
   });
+    async function doMosaicResetOnBackend(){
+  var root = db.ref();
+  var updates = {
+    // Vide la mosaïque + l’historique (retire 'history' si tu veux le conserver)
+    'pixels': null,
+    'history': null,
+
+    // Remet le compteur de clics à zéro
+    'stats/clicksTotal': 0,
+
+    // Marqueur de reset (horodaté côté serveur)
+    'config/lastResetAt': firebase.database.ServerValue.TIMESTAMP
+  };
+  await root.update(updates); // multi-location update = atomique côté RTDB
+}
+
   </script>
 </body>
 </html>
