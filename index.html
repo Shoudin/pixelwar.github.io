@@ -143,6 +143,25 @@
 #pseudoMenuModal .modal-card ul > li[style*="grid-template-columns"] > button{
   width: 42px; height: 36px; padding: 0; font-size: 20px; line-height: 1;
 }
+/* — Règles (modal) — */
+.rules-overlay{
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: none; align-items: center; justify-content: center; z-index: 9999;
+}
+.rules-modal{
+  width: min(560px, 92vw); background: #fff; color:#111; border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25); padding: 20px 20px 16px;
+  border: 1px solid #ddd;
+}
+.rules-modal h2{ margin: 0 0 8px; font-size: 20px; }
+.rules-modal p{ margin: 8px 0; line-height: 1.5; }
+.rules-actions{ display:flex; justify-content:flex-end; gap: 8px; margin-top: 14px; }
+.rules-ok{
+  appearance: none; border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 600;
+  background:#111; color:#fff; cursor:not-allowed; opacity:.6;
+}
+.rules-ok.enabled{ cursor:pointer; opacity:1; }
+.rules-count{ font-size: 12px; color:#666; margin-right:auto; align-self:center; }
 
   </style>
 </head>
@@ -876,6 +895,10 @@ if (prevKey && prevKey !== key){
       namesByUid[CURRENT_UID] = raw;
       updatePseudoBtn();
       closePseudoModal();
+      // Mémoriser et prévenir la pop-up Règles
+localStorage.setItem('nickname', myName);
+document.dispatchEvent(new CustomEvent('pseudo:chosen'));
+
     } catch (err){
       console.error(err);
       pseudoError.textContent = "Erreur réseau. Réessaie.";
@@ -1075,18 +1098,24 @@ window.addEventListener('pagehide', flushClicks);
 
 
 
-    watchValue(`users/${CURRENT_UID}/name`, (s)=>{
+  watchValue(`users/${CURRENT_UID}/name`, (s)=>{
   _isApplyingRemote = true;
   try {
     const n = s.val();
     myName = (typeof n === 'string' && n) ? n : null;
-    if (myName) namesByUid[CURRENT_UID] = myName;
+    if (myName) {
+      namesByUid[CURRENT_UID] = myName;
+      localStorage.setItem('nickname', myName); // ← NEW : garde en local
+    } else {
+      localStorage.removeItem('nickname');      // ← NEW : nettoyage si aucun pseudo
+    }
     updatePseudoBtn();
     if (!myName) openPseudoModal();
   } finally {
     _isApplyingRemote = false;
   }
 });
+
 
 
  const myPresenceRef = presenceRootRef.child(user.uid);
@@ -1585,8 +1614,91 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
   start();
 })();
   </script>
+  <!-- Fenêtre Règles -->
+<div id="rulesOverlay" class="rules-overlay" aria-modal="true" role="dialog" aria-labelledby="rulesTitle" aria-hidden="true">
+  <div class="rules-modal">
+    <h2 id="rulesTitle">Règles</h2>
+    <p>
+      Toute représentation offensante, violente ou à caractère sexuel sera suivie d’un bannissement permanent du site.
+    </p>
+    <p>
+      Merci de respecter les règles du vivre-ensemble pour faire de cet endroit un espace de création partagé agréable pour tous.
+    </p>
+    <div class="rules-actions">
+      <span id="rulesCount" class="rules-count">OK disponible dans 10&nbsp;s</span>
+      <button id="rulesOkBtn" class="rules-ok" disabled>OK</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const KEY_ACCEPT = 'rulesAcceptedV1';
+  const overlay = document.getElementById('rulesOverlay');
+  const okBtn   = document.getElementById('rulesOkBtn');
+  const countEl = document.getElementById('rulesCount');
+
+  let countdown = 10, timerId = null;
+
+  function startCountdown(){
+    countdown = 10;
+    updateCount();
+    okBtn.disabled = true;
+    okBtn.classList.remove('enabled');
+    clearInterval(timerId);
+    timerId = setInterval(()=>{
+      countdown--;
+      updateCount();
+      if (countdown <= 0){
+        clearInterval(timerId);
+        countEl.textContent = '';
+        okBtn.disabled = false;
+        okBtn.classList.add('enabled');
+        okBtn.focus();
+      }
+    }, 1000);
+  }
+  function updateCount(){ countEl.textContent = `OK disponible dans ${countdown}\u00A0s`; }
+
+  function showRules(){
+    if (localStorage.getItem(KEY_ACCEPT)) return;
+    overlay.style.display = 'flex';
+    overlay.setAttribute('aria-hidden', 'false');
+    startCountdown();
+    // Bloquer ESC / clic dehors tant que pas OK
+    document.addEventListener('keydown', blockEsc, { capture:true });
+  }
+  function blockEsc(e){ if (e.key === 'Escape'){ e.preventDefault(); } }
+
+  function acceptRules(){
+    if (okBtn.disabled) return;
+    localStorage.setItem(KEY_ACCEPT, '1');
+    overlay.style.display = 'none';
+    overlay.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', blockEsc, { capture:true });
+  }
+  okBtn.addEventListener('click', acceptRules);
+
+  // ——— Détection "pseudo choisi" ———
+  function hasPseudoChosen(){
+    // Tu stockes (cf. patchs ci-dessous) le pseudo en localStorage
+    const nick = localStorage.getItem('nickname');
+    return !!(nick && nick.trim().length);
+  }
+
+  // 1) Si pseudo déjà connu => affiche à la connexion
+  if (hasPseudoChosen()) showRules();
+
+  // 2) Sinon : attendre l’événement déclenché quand le pseudo est validé
+  document.addEventListener('pseudo:chosen', ()=>{ showRules(); }, { once:true });
+
+  // Helper optionnel si tu préfères appeler une fonction
+  window.__showRulesAfterPseudo = showRules;
+})();
+</script>
+
 </body>
 </html>
+
 
 
 
