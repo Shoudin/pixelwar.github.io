@@ -2,7 +2,7 @@
 const API_BASE = 'https://pixelwar-worker.shoudin.workers.dev';
 
 async function ensureNotIPBanned() {
-  const res = await fetch(`${API_BASE}/ping`);
+  const res = await fetch(`${API_BASE}/ping`, { cache: 'no-store' });
   if (!res.ok) {
     let msg = 'Accès bloqué.';
     try { const j = await res.json(); if (j?.reason) msg = `Accès bloqué — ${j.reason}`; } catch {}
@@ -13,6 +13,7 @@ async function ensureNotIPBanned() {
     throw new Error('IP banned');
   }
 }
+
 
 const W = 100, H = 100, PIX = 10; // taille de la grille et des pixels
 const colors = [
@@ -72,4 +73,5 @@ canvas.addEventListener('click', async (e) => {
   if (c<=0) { alert('Pas assez de crédits. Scanne un QR pack.'); return; }
   grid[y][x] = selected; saveGrid(); setCredits(c-1); draw();
 });
+
 
