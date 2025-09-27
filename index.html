@@ -236,6 +236,23 @@
       <p id="pseudoError" class="error" aria-live="polite"></p>
     </div>
   </div>
+  
+  <!-- Anti-ban: cache la page et vérifie /ping AVANT toute initialisation -->
+  <script>
+    // Masquer la page jusqu'à validation
+    document.documentElement.style.visibility = 'hidden';
+  </script>
+  <script src="app.js"></script>
+  <script>
+    (async () => {
+      try {
+        await ensureNotIPBanned(); // fait un GET /ping avec {cache:'no-store'} (déjà dans ton app.js)
+      } finally {
+        // Ré-affiche la page quoi qu'il arrive (en cas de ban, app.js remplace le body par le message)
+        document.documentElement.style.visibility = 'visible';
+      }
+    })();
+  </script>
 
   <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" crossorigin="anonymous"></script>
@@ -1564,6 +1581,7 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
   </script>
 </body>
 </html>
+
 
 
 
