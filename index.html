@@ -380,14 +380,68 @@ function measureCanvasRect(){
   _canvasRect = canvas.getBoundingClientRect();
 }
   // === Palette ===
-  const colors = [
-    '#000000','#FFFFFF','#E91E63','#9C27B0','#3F51B5',
-    '#03A9F4','#009688','#8BC34A','#FFEB3B','#FF9800',
-    '#AD1457','#6A1B9A','#283593','#0288D1','#00695C',
-    '#558B2F','#FBC02D','#EF6C00','#D84315','#795548',
-    '#E0E0E0','#9E9E9E','#616161','#FF0000', '#FFDBAC', 
-    '#F1C27D', '#E0AC69','#f9c8d8'
-  ];
+ const colors = [
+  // Neutres (indices invariants utiles : 0 = Noir, 1 = Blanc*)
+  '#000000', // 0 Noir
+  '#FFFFFF', // 1 Blanc* (stockage/rendu) → affiché comme "Gomme" dans l'UI
+
+  '#2F2F2F', // 2 Gris anthracite
+  '#808080', // 3 Gris moyen
+  '#D3D3D3', // 4 Gris clair
+
+  // Rouges
+  '#800000', // 5 Bordeaux
+  '#FF0000', // 6 Rouge vif
+  '#FFC0CB', // 7 Rose clair
+
+  // Oranges
+  '#8B4513', // 8 Brun chaud
+  '#FF7F00', // 9 Orange vif
+  '#FFDAB9', // 10 Pêche
+
+  // Jaunes
+  '#FFD700', // 11 Or profond
+  '#FFFF00', // 12 Jaune soleil
+  '#FFFACD', // 13 Jaune pastel
+
+  // Verts
+  '#006400', // 14 Vert forêt
+  '#00FF00', // 15 Vert herbe
+  '#ADFF2F', // 16 Vert anis
+
+  // Turquoises
+  '#008080', // 17 Sarcelle
+  '#40E0D0', // 18 Turquoise
+  '#00FFFF', // 19 Aqua
+
+  // Bleus
+  '#000080', // 20 Bleu marine
+  '#0000FF', // 21 Bleu roi
+  '#87CEEB', // 22 Bleu ciel
+
+  // Violets (renforcés)
+  '#4B0082', // 23 Violet profond
+  '#8A2BE2', // 24 Violet pur
+  '#BA55D3', // 25 Violet clair
+  '#E6E6FA', // 26 Lavande
+
+  // +1 neutre léger pour compléter à 28
+  '#EEEEEE', // 27 Gris perle
+];
+
+    // Ordre visuel de rendu des swatches (indices du tableau colors)
+const PALETTE_ORDER = [
+  0, 2, 3, 4, 1,      // Noir → Gris anth → Gris moyen → Gris clair → (1=Blanc→Gomme UI)
+  5, 6, 7,            // Rouges
+  8, 9, 10,           // Oranges
+  11,12,13,           // Jaunes
+  14,15,16,           // Verts
+  17,18,19,           // Turquoises
+  20,21,22,           // Bleus
+  23,24,25,26,        // Violets renforcés
+  27                  // Gris perle
+];
+
   let selected = 0;
 // ——— Sélection gomme ———
 let selectedIsEraser = false; // true = outil Gomme actif
@@ -569,44 +623,39 @@ function drawGridOverlay(){
   canvas.addEventListener('mouseenter', updateCursor);
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; trackerTip.style.display='none'; });
 
- function buildPalette(){
+function buildPalette(){
   paletteGrid.innerHTML = '';
-
-  // 1) Swatch "Gomme" en premier
-  const er = document.createElement('div');
-  er.className = 'sw';
-  er.title = 'Gomme — effacer le pixel';
-  er.style.background =
-    'conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0) center/12px 12px';
-  er.style.border = '2px dashed #999';
-  if (selectedIsEraser) er.classList.add('activeSw');
-  er.onclick = ()=>{
-    selectedIsEraser = true;
-    [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
-    er.classList.add('activeSw');
-    updateCursor();
-  };
-  paletteGrid.appendChild(er);
-
-  // 2) Couleurs (on saute le blanc pur UI, mais on garde son index en data)
-  colors.forEach((c, i)=>{
-    // On masque visuellement le blanc UI (index 1) pour que "Gomme" prenne sa place
-    if (i === 1 && String(c).toUpperCase() === '#FFFFFF') return;
-
+  PALETTE_ORDER.forEach((idx)=>{
     const sw = document.createElement('div');
     sw.className = 'sw';
-    sw.style.background = c;
-    sw.title = c;
-    // actif si ce color index est sélectionné (et pas gomme)
-    if (!selectedIsEraser && i === selected) sw.classList.add('activeSw');
 
-    sw.onclick = ()=>{
-      selectedIsEraser = false;
-      selected = i;
-      [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
-      sw.classList.add('activeSw');
-      updateCursor();
-    };
+    if (idx === 1) {
+      // ——— Gomme (remplace le blanc dans l’UI)
+      sw.title = 'Gomme — effacer le pixel';
+      sw.style.background = '#FFFFFF'; // visuel blanc pur
+      // bordure fine comme les autres, pas de damier (convenu)
+      if (selectedIsEraser) sw.classList.add('activeSw');
+      sw.onclick = ()=>{
+        selected = 1;
+        selectedIsEraser = true;
+        [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
+        sw.classList.add('activeSw');
+        updateCursor();
+      };
+    } else {
+      const hex = colors[idx];
+      sw.style.background = hex;
+      sw.title = hex;
+      if (!selectedIsEraser && idx === selected) sw.classList.add('activeSw');
+      sw.onclick = ()=>{
+        selected = idx;
+        selectedIsEraser = (idx === 1);
+        [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
+        sw.classList.add('activeSw');
+        updateCursor();
+      };
+    }
+
     paletteGrid.appendChild(sw);
   });
 }
@@ -1412,23 +1461,30 @@ canvas.addEventListener('click', async (e)=>{
 
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
-        e.preventDefault();
-// Si on était sur la gomme, on repasse au cycle couleurs (point de départ = 0)
-if (selectedIsEraser){ selectedIsEraser = false; selected = 0; }
-if (e.deltaY > 0) selected = (selected + 1) % colors.length;
-else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
+       e.preventDefault();
 
-// Re-synchroniser la classe active (le 1er enfant est la gomme → décalage de +1)
+// Position actuelle dans l'ordre visuel
+const curIdx = selectedIsEraser ? 1 : selected;
+let pos = PALETTE_ORDER.indexOf(curIdx);
+if (pos < 0) pos = 0;
+
+// +1 / -1 dans l'ordre visuel
+pos = (e.deltaY > 0)
+  ? (pos + 1) % PALETTE_ORDER.length
+  : (pos - 1 + PALETTE_ORDER.length) % PALETTE_ORDER.length;
+
+const nextIdx = PALETTE_ORDER[pos];
+selected = nextIdx;
+selectedIsEraser = (nextIdx === 1);
+
+// Mise à jour visuelle (activeSw)
 [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
-const uiIndex = 1 /* gomme */ + (selected >= 1 ? selected - 1 : selected);
-// attention : on a sauté l’index 1 (blanc) côté UI, donc on “recolle” visuellement :
-let k = selected;
-if (k >= 1) k -= 1;
-paletteGrid.children[1 + k]?.classList.add('activeSw');
+paletteGrid.children[pos]?.classList.add('activeSw');
 
 updateCursor();
       }
     }, { passive: false });
+    
 // --- Ctrl + molette : zoom autour du pointeur (façon Google Maps) ---
 // --- Ctrl/Cmd + molette : zoom rAF-coalescé autour du pointeur ---
 let _wheelZoomQueued = false;
@@ -1781,6 +1837,7 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
 
 </body>
 </html>
+
 
 
 
