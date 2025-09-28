@@ -1657,47 +1657,48 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
       }
     }, 1000);
   }
-  function updateCount(){ countEl.textContent = `OK disponible dans ${countdown}\u00A0s`; }
+
+  function updateCount(){
+    countEl.textContent = `OK disponible dans ${countdown}\u00A0s`;
+  }
 
   function showRules(){
-    if (localStorage.getItem(KEY_ACCEPT)) return;
+    if (sessionStorage.getItem(KEY_ACCEPT)) return; // une seule fois par session
     overlay.style.display = 'flex';
     overlay.setAttribute('aria-hidden', 'false');
     startCountdown();
-    // Bloquer ESC / clic dehors tant que pas OK
     document.addEventListener('keydown', blockEsc, { capture:true });
   }
+
   function blockEsc(e){ if (e.key === 'Escape'){ e.preventDefault(); } }
 
   function acceptRules(){
     if (okBtn.disabled) return;
-    localStorage.setItem(KEY_ACCEPT, '1');
+    sessionStorage.setItem(KEY_ACCEPT, '1');
     overlay.style.display = 'none';
     overlay.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', blockEsc, { capture:true });
   }
+
   okBtn.addEventListener('click', acceptRules);
 
-  // ——— Détection "pseudo choisi" ———
+  // Détection pseudo choisi
   function hasPseudoChosen(){
-    // Tu stockes (cf. patchs ci-dessous) le pseudo en localStorage
     const nick = localStorage.getItem('nickname');
     return !!(nick && nick.trim().length);
   }
 
-  // 1) Si pseudo déjà connu => affiche à la connexion
   if (hasPseudoChosen()) showRules();
-
-  // 2) Sinon : attendre l’événement déclenché quand le pseudo est validé
   document.addEventListener('pseudo:chosen', ()=>{ showRules(); }, { once:true });
 
-  // Helper optionnel si tu préfères appeler une fonction
   window.__showRulesAfterPseudo = showRules;
 })();
 </script>
 
+
 </body>
 </html>
+
 
 
 
