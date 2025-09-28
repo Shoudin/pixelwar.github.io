@@ -292,6 +292,11 @@
   var auth = firebase.auth();
   var db = firebase.database();
   var storage = firebase.storage();
+    
+    // ---------- Backend API (Worker) ----------
+var API_BASE = 'pixelwar-worker.shoudin.workers.dev';  // remplace par l’URL exacte du Worker (onglet Triggers)
+var ADMIN_TOKEN = 'sk_admin_9XJcQ7eVqk8xR1tG5pZ2mH4nC6sA0bL3';    // remplace par la valeur mise dans ADMIN_TOKEN (Variables & Secrets)
+
 
   // ---------- Compat utils (dates) ----------
   function supportsDateStyle(){
@@ -865,21 +870,33 @@ function drawLineChart(series, hasData){
   document.getElementById('tab-gestion').addEventListener('click', function(){
     renderUsers();
   });
-    async function doMosaicResetOnBackend(){
+    
+async function doMosaicResetOnBackend(){
+  // 1) Appel du Worker : efface pixels (+ history si configuré côté Worker)
+  var res = await fetch(API_BASE + '/admin/reset-mosaic', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'authorization': 'Bearer ' + ADMIN_TOKEN
+    },
+    body: '{}' // payload vide
+  });
+  var j = await res.json().catch(function(){ return {}; });
+  if (!res.ok || !j.ok) {
+    throw new Error('Backend reset failed: ' + (j.error || ('HTTP '+res.status)));
+  }
+
+  // 2) Mise à jour des méta-infos côté RTDB (facultatif mais utile pour l’UI)
+  //    - Remet les compteurs (si tu les utilises)
+  //    - Marque la date du dernier reset
   var root = db.ref();
   var updates = {
-    // Vide la mosaïque + l’historique (retire 'history' si tu veux le conserver)
-    'pixels': null,
-    'history': null,
-
-    // Remet le compteur de clics à zéro
     'stats/clicksTotal': 0,
-
-    // Marqueur de reset (horodaté côté serveur)
     'config/lastResetAt': firebase.database.ServerValue.TIMESTAMP
   };
-  await root.update(updates); // multi-location update = atomique côté RTDB
+  await root.update(updates);
 }
+
 
   </script>
 </body>
