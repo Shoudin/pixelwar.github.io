@@ -389,6 +389,8 @@ function measureCanvasRect(){
     '#F1C27D', '#E0AC69','#f9c8d8'
   ];
   let selected = 0;
+// ——— Sélection gomme ———
+let selectedIsEraser = false; // true = outil Gomme actif
 
   // === Références DOM ===
   const viewport   = document.getElementById('viewport');
@@ -545,25 +547,70 @@ function drawGridOverlay(){
       `</svg>`;
     return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
   }
-  function updateCursor(){ canvas.style.cursor = makeColorCursor(colors[selected]); }
+    
+    function makeEraserCursor(size = 22){
+  const r = Math.floor(size/2) - 2;
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>` +
+      `<defs><pattern id='chk' width='6' height='6' patternUnits='userSpaceOnUse'>` +
+        `<rect width='6' height='6' fill='#fff'/><path d='M0,0 L6,6 M-3,3 L3,9 M3,-3 L9,3' stroke='#ddd'/>` +
+      `</pattern></defs>` +
+      `<circle cx='${size/2}' cy='${size/2}' r='${r}' fill='url(#chk)' stroke='#999' stroke-width='2'/>` +
+      `<line x1='4' y1='4' x2='${size-4}' y2='${size-4}' stroke='#b00' stroke-width='2'/>` +
+    `</svg>`;
+  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${Math.floor(size/2)} ${Math.floor(size/2)}, crosshair`;
+}
+
+    function updateCursor(){
+  if (selectedIsEraser) canvas.style.cursor = makeEraserCursor();
+  else canvas.style.cursor = makeColorCursor(colors[selected]);
+}
+
   canvas.addEventListener('mouseenter', updateCursor);
   canvas.addEventListener('mouseleave', ()=>{ canvas.style.cursor = 'default'; coordsEl.textContent = '—'; trackerTip.style.display='none'; });
 
-  function buildPalette(){
-    paletteGrid.innerHTML = '';
-    colors.forEach((c,i)=>{
-      const sw = document.createElement('div');
-      sw.className = 'sw'; sw.style.background = c; sw.title = c;
-      if (i===selected) sw.classList.add('activeSw');
-      sw.onclick = ()=>{
-        selected = i;
-        [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
-        sw.classList.add('activeSw');
-        updateCursor();
-      };
-      paletteGrid.appendChild(sw);
-    });
-  }
+ function buildPalette(){
+  paletteGrid.innerHTML = '';
+
+  // 1) Swatch "Gomme" en premier
+  const er = document.createElement('div');
+  er.className = 'sw';
+  er.title = 'Gomme — effacer le pixel';
+  er.style.background =
+    'conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0) center/12px 12px';
+  er.style.border = '2px dashed #999';
+  if (selectedIsEraser) er.classList.add('activeSw');
+  er.onclick = ()=>{
+    selectedIsEraser = true;
+    [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
+    er.classList.add('activeSw');
+    updateCursor();
+  };
+  paletteGrid.appendChild(er);
+
+  // 2) Couleurs (on saute le blanc pur UI, mais on garde son index en data)
+  colors.forEach((c, i)=>{
+    // On masque visuellement le blanc UI (index 1) pour que "Gomme" prenne sa place
+    if (i === 1 && String(c).toUpperCase() === '#FFFFFF') return;
+
+    const sw = document.createElement('div');
+    sw.className = 'sw';
+    sw.style.background = c;
+    sw.title = c;
+    // actif si ce color index est sélectionné (et pas gomme)
+    if (!selectedIsEraser && i === selected) sw.classList.add('activeSw');
+
+    sw.onclick = ()=>{
+      selectedIsEraser = false;
+      selected = i;
+      [...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
+      sw.classList.add('activeSw');
+      updateCursor();
+    };
+    paletteGrid.appendChild(sw);
+  });
+}
+
  // Cache de dernière mise en page pour court-circuiter les no-op
 let _pal_lastW = -1, _pal_lastCols = -1, _pal_lastSW = -1, _pal_lastBarH = -1;
 
@@ -1257,6 +1304,7 @@ if (!window._pixelsAttached) {
     // === Listeners temps réel après le rendu initial ===
     pixelsRef.on('child_changed', onPixelUpdate);
     pixelsRef.on('child_added',  onPixelUpdate);
+    pixelsRef.on('child_removed', onPixelRemoved);
   });
 }
 
@@ -1308,6 +1356,17 @@ function onPixelUpdate(snap){
     enqueueCell(x, y);           // ← on dessine via le batch/frame
   }
 }
+    
+function onPixelRemoved(snap){
+  const [x,y] = snap.key.split('_').map(Number);
+  if (x>=0 && x<W && y>=0 && y<H){
+    // effacement = retour au "fond" → on force l’index 1 (blanc)
+    grid[y][x] = 1;
+    authorGrid[y][x] = null;
+    tsGrid[y][x] = null;
+    enqueueCell(x, y);
+  }
+}
 
 canvas.addEventListener('click', async (e)=>{
   if (!myName) { openPseudoModal(); return; }
@@ -1318,21 +1377,38 @@ canvas.addEventListener('click', async (e)=>{
   if (x<0||x>=W||y<0||y>=H) return;
   if (selected < 0 || selected >= colors.length) return;
   const key = `${x}_${y}`;
-  try {
+ try {
+  const pixRef = db.ref(`pixels/${key}`);
+
+  if (selectedIsEraser){
+    // ——— ERASE : suppression du nœud → RTDB envoie un child_removed
+    await safeSet(pixRef, null);
+
+    // Historique optionnel (trace effacement)
+    const histRef = db.ref(`history/${key}`).push();
+    await safeSet(histRef, {
+      color: null, erase: true,
+      author: CURRENT_UID || 'anon',
+      ts: firebase.database.ServerValue.TIMESTAMP
+    });
+  } else {
     const payload = {
       color: selected,
       author: CURRENT_UID || 'anon',
       ts: firebase.database.ServerValue.TIMESTAMP
     };
-    // Écritures "propres" via safeSet (zéro feedback même si un watcher traîne ailleurs)
-    const pixRef = db.ref(`pixels/${key}`);
     await safeSet(pixRef, payload);
 
     const histRef = db.ref(`history/${key}`).push();
     await safeSet(histRef, payload);
+  }
 
-    _clicksBuffer++; scheduleClicksFlush();
-  } catch (err) {
+  _clicksBuffer++; scheduleClicksFlush();
+} catch (err) {
+  console.error('write pixel / click count error', err);
+}
+
+  catch (err) {
     console.error('write pixel / click count error', err);
   }
 });
@@ -1340,10 +1416,20 @@ canvas.addEventListener('click', async (e)=>{
     canvas.addEventListener('wheel', e => {
       if (e.shiftKey) {
         e.preventDefault();
-        if (e.deltaY > 0) selected = (selected + 1) % colors.length;
-        else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
-        [...paletteGrid.children].forEach((el, idx)=> el.classList.toggle('activeSw', idx===selected));
-        updateCursor();
+// Si on était sur la gomme, on repasse au cycle couleurs (point de départ = 0)
+if (selectedIsEraser){ selectedIsEraser = false; selected = 0; }
+if (e.deltaY > 0) selected = (selected + 1) % colors.length;
+else if (e.deltaY < 0) selected = (selected - 1 + colors.length) % colors.length;
+
+// Re-synchroniser la classe active (le 1er enfant est la gomme → décalage de +1)
+[...paletteGrid.children].forEach(el => el.classList.remove('activeSw'));
+const uiIndex = 1 /* gomme */ + (selected >= 1 ? selected - 1 : selected);
+// attention : on a sauté l’index 1 (blanc) côté UI, donc on “recolle” visuellement :
+let k = selected;
+if (k >= 1) k -= 1;
+paletteGrid.children[1 + k]?.classList.add('activeSw');
+
+updateCursor();
       }
     }, { passive: false });
 // --- Ctrl + molette : zoom autour du pointeur (façon Google Maps) ---
@@ -1698,6 +1784,7 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
 
 </body>
 </html>
+
 
 
 
