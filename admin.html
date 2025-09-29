@@ -297,6 +297,29 @@
 var API_BASE = 'https://pixelwar-worker.shoudin.workers.dev';  // remplace par l’URL exacte du Worker (onglet Triggers)
 var ADMIN_TOKEN = 'sk_admin_9XJcQ7eVqk8xR1tG5pZ2mH4nC6sA0bL3';    // remplace par la valeur mise dans ADMIN_TOKEN (Variables & Secrets)
 
+    // --- helpers Worker ---
+async function apiGet(path){
+  const res = await fetch(API_BASE + path, {
+    headers: { 'authorization': 'Bearer ' + ADMIN_TOKEN }
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok) throw new Error(j.error || ('HTTP '+res.status));
+  return j;
+}
+async function apiPost(path, body){
+  const res = await fetch(API_BASE + path, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'authorization': 'Bearer ' + ADMIN_TOKEN
+    },
+    body: JSON.stringify(body || {})
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok) throw new Error(j.error || ('HTTP '+res.status));
+  return j;
+}
+
 
   // ---------- Compat utils (dates) ----------
   function supportsDateStyle(){
@@ -324,6 +347,16 @@ var ADMIN_TOKEN = 'sk_admin_9XJcQ7eVqk8xR1tG5pZ2mH4nC6sA0bL3';    // remplace pa
     return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
   }
   function uidShort(uid){ return uid ? String(uid).slice(0,6) : '—'; }
+
+    // --- map UID -> IP via Worker ---
+async function getIpByUid(uid){
+  if (!uid) throw new Error('UID manquant');
+  // Endpoint attendu côté Worker : /admin/ip-by-uid?uid=...
+  // Si ton Worker ne l’a pas encore, dis-le moi : je te donne le patch Worker.
+  const j = await apiGet('/admin/ip-by-uid?uid=' + encodeURIComponent(uid));
+  if (!j.ok || !j.ip) throw new Error('IP introuvable pour cet UID');
+  return j.ip;
+}
 
   // ---------- Constantes ----------
   var W=300, H=300, TOTAL_CELLS=W*H;
@@ -836,23 +869,45 @@ function drawLineChart(series, hasData){
     }catch(e){ console.error(e); alert('Erreur pendant la suppression du pseudo.'); }
   }
 
-  async function banUser(uid, name){
-    if(!ADMIN_OK){ alert('Accès admin requis.'); return; }
-    var ok = confirm('BANNIR '+(name||uid)+' ?\n• Ajoute l’UID à /banned\n• Efface tous ses pixels sur la mosaïque');
-    if (!ok) return;
-    try{
-      await db.ref('banned/'+uid).set(true);
-      // effacer tous les pixels de cet uid
-      var q = db.ref('pixels').orderByChild('author').equalTo(uid);
-      var snap = await q.once('value');
-      var updates = {};
-      snap.forEach(function(child){
-        var k = child.key; updates['pixels/'+k] = { color: 1, author: null, ts: null }; // 1 = blanc
-      });
-      if (Object.keys(updates).length) await db.ref().update(updates);
-      alert('Utilisateur banni et pixels effacés.');
-    }catch(e){ console.error(e); alert('Erreur pendant le bannissement.'); }
+ async function banUser(uid, name){
+  if(!ADMIN_OK){ alert('Accès admin requis.'); return; }
+  const label = (name || uid);
+  const ok = confirm(
+    'BANNIR définitivement ' + label + ' ?\n\n' +
+    '• Résout son IP (via Worker)\n' +
+    '• Ban IP PERMANENT (KV)\n' +
+    '• Efface tous ses pixels (UID) dans la RTDB\n' +
+    '• Marque /banned/{uid}=true pour l’UI'
+  );
+  if (!ok) return;
+
+  try{
+    // 1) Trouver son IP
+    const ip = await getIpByUid(uid);
+
+    // 2) Ban IP permanent (ttl = 0 → définitif)
+    await apiPost('/admin/ban', { ip, reason: 'admin-ban', minutes: 0 });
+
+    // 3) Effacer pixels de cet UID dans Firebase
+    const q = db.ref('pixels').orderByChild('author').equalTo(uid);
+    const snap = await q.once('value');
+    const updates = {};
+    snap.forEach(child => {
+      const k = child.key;
+      updates['pixels/'+k] = { color: 1, author: null, ts: null }; // 1 = blanc
+    });
+    if (Object.keys(updates).length) await db.ref().update(updates);
+
+    // 4) Marqueur UI (badge)
+    await db.ref('banned/'+uid).set(true);
+
+    alert(`OK : ${label} banni (IP ${ip}) et pixels effacés.`);
+  } catch (e){
+    console.error(e);
+    alert('Erreur pendant le bannissement : ' + (e.message || e));
   }
+}
+
 
   // ---------- Init ----------
   loadBoardToPreview();
