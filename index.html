@@ -1192,7 +1192,14 @@ window.addEventListener('pagehide', flushClicks);
     if (!user) return;
     CURRENT_UID = user.uid;
 
-
+  // --- NEW: déclarer l'UID au Worker (map UID -> IP)
+  try {
+    fetch('https://pixelwar-worker.shoudin.workers.dev/track', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ uid: CURRENT_UID })
+    }).catch(()=>{});
+  } catch(e) {}
 
   watchValue(`users/${CURRENT_UID}/name`, (s)=>{
   _isApplyingRemote = true;
@@ -1837,15 +1844,3 @@ document.getElementById('countdown').innerHTML = '<span style="color:#b00020;fon
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
